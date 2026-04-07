@@ -1,4 +1,4 @@
-import { and, between, eq, notInArray, sql } from 'drizzle-orm'
+import { eq, notInArray, sql } from 'drizzle-orm'
 import { db } from '../../db/client.js'
 import { amocrmDeals, simRegistrations } from '../../db/schema.js'
 import { config } from '../../core/config.js'
@@ -18,6 +18,15 @@ export interface AssociationRow {
   total: number
   /** Маппинг "день месяца → количество" */
   counts: Record<number, number>
+  /** Сколько всего оформлений у объединения за всё время */
+  lifetimeTotal: number
+  /** Среднее количество оформлений в день (на активные дни, 1 знак после запятой) */
+  lifetimeAvgPerDay: number
+}
+
+export interface AssociationOption {
+  name:  string
+  total: number
 }
 
 export interface AssociationsReportPayload {
@@ -34,12 +43,7 @@ export interface AssociationsReportPayload {
   allOptions:  AssociationOption[]
 }
 
-export interface AssociationOption {
-  name:  string
-  total: number
-}
-
-function monthRange(year: number, month: number) {
+function monthBounds(year: number, month: number) {
   const from = `${year}-${String(month).padStart(2, '0')}-01`
   const last = new Date(year, month, 0).getDate()
   const to = `${year}-${String(month).padStart(2, '0')}-${String(last).padStart(2, '0')}`
@@ -58,10 +62,24 @@ function extractAssociation(raw: unknown): string {
   return parts.length ? parts.join(', ') : NO_ASSOCIATION
 }
 
+interface MonthlyAgg {
+  total:  number
+  counts: Record<number, number>
+}
+
+interface LifetimeAgg {
+  total: number
+  /** Множество уникальных дат, в которые были оформления — для расчёта среднего */
+  days:  Set<string>
+}
+
 export const associationsReportService = {
   /**
    * Возвращает помесячный отчёт по объединениям с пагинацией.
    * Сортировка — по убыванию суммы оформлений за месяц.
+   *
+   * Внутри делается ОДИН проход по всем sim-регистрациям: считаем
+   * и месячные срезы, и lifetime-статистику (всего за всё время + ср/день).
    */
   async getMonthly(
     year: number,
@@ -71,16 +89,11 @@ export const associationsReportService = {
     selected: string[] = [],
   ): Promise<AssociationsReportPayload> {
     const excluded = config.reportExcludedUserIds
-    const { from, to } = monthRange(year, month)
+    const { from, to } = monthBounds(year, month)
 
-    const dateFilter = between(simRegistrations.registeredOn, from, to)
-    const where = excluded.length
-      ? and(dateFilter, notInArray(simRegistrations.responsibleUserId, excluded))
-      : dateFilter
-
-    // Тянем все sim-регистрации месяца с raw сделки.
-    // Для текущих объёмов (десятки/сотни в день) это быстрее и проще,
-    // чем вытаскивать поле через jsonb-операторы в Postgres.
+    // Тянем ВСЕ sim-регистрации (не только месяц), потому что нужен
+    // lifetime для каждой строки. Для текущих объёмов это нормально;
+    // если станет больно — оптимизируем через материализованную view.
     const dbRows = await db
       .select({
         date: simRegistrations.registeredOn,
@@ -88,50 +101,81 @@ export const associationsReportService = {
       })
       .from(simRegistrations)
       .innerJoin(amocrmDeals, eq(amocrmDeals.id, simRegistrations.dealId))
-      .where(where)
+      .where(excluded.length
+        ? notInArray(simRegistrations.responsibleUserId, excluded)
+        : sql`true`)
 
-    // Группировка: association → { total, counts[day] }
-    const groups = new Map<string, AssociationRow>()
+    const monthly  = new Map<string, MonthlyAgg>()
+    const lifetime = new Map<string, LifetimeAgg>()
     let grandTotal = 0
+
     for (const r of dbRows) {
       const assoc = extractAssociation(r.raw)
-      const day   = Number(String(r.date).slice(8, 10))
-      let g = groups.get(assoc)
-      if (!g) {
-        g = { association: assoc, total: 0, counts: {} }
-        groups.set(assoc, g)
+      const date  = String(r.date)
+
+      // Lifetime — копим всегда
+      let lt = lifetime.get(assoc)
+      if (!lt) {
+        lt = { total: 0, days: new Set<string>() }
+        lifetime.set(assoc, lt)
       }
-      g.total += 1
-      g.counts[day] = (g.counts[day] ?? 0) + 1
-      grandTotal += 1
+      lt.total += 1
+      lt.days.add(date)
+
+      // Месячное — только если попадает в окно
+      if (date >= from && date <= to) {
+        const day = Number(date.slice(8, 10))
+        let m = monthly.get(assoc)
+        if (!m) {
+          m = { total: 0, counts: {} }
+          monthly.set(assoc, m)
+        }
+        m.total += 1
+        m.counts[day] = (m.counts[day] ?? 0) + 1
+        grandTotal += 1
+      }
     }
 
-    const sorted = Array.from(groups.values()).sort((a, b) => {
+    // Собираем строки только для тех, кто появился в текущем месяце
+    const enriched: AssociationRow[] = Array.from(monthly.entries()).map(([assoc, m]) => {
+      const lt = lifetime.get(assoc)
+      const lifetimeTotal = lt?.total ?? 0
+      const activeDays    = lt?.days.size ?? 0
+      const lifetimeAvgPerDay = activeDays > 0
+        ? Math.round((lifetimeTotal / activeDays) * 10) / 10
+        : 0
+      return {
+        association:       assoc,
+        total:             m.total,
+        counts:            m.counts,
+        lifetimeTotal,
+        lifetimeAvgPerDay,
+      }
+    })
+
+    enriched.sort((a, b) => {
       if (b.total !== a.total) return b.total - a.total
       return a.association.localeCompare(b.association, 'ru')
     })
 
-    // Полный список для фильтра — отдаём всегда, не зависит от выбора
-    const allOptions: AssociationOption[] = sorted.map(r => ({
+    const allOptions: AssociationOption[] = enriched.map(r => ({
       name:  r.association,
       total: r.total,
     }))
 
-    // Если выбран фильтр — отдаём только выбранные, без пагинации.
-    // Иначе — стандартная пагинация по limit/offset.
     let rows: AssociationRow[]
     let hasMore: boolean
     let totalGroups: number
 
     if (selected.length) {
       const set = new Set(selected)
-      rows = sorted.filter(r => set.has(r.association))
+      rows = enriched.filter(r => set.has(r.association))
       totalGroups = rows.length
       hasMore = false
     } else {
-      rows = sorted.slice(offset, offset + limit)
-      totalGroups = sorted.length
-      hasMore = offset + rows.length < sorted.length
+      rows = enriched.slice(offset, offset + limit)
+      totalGroups = enriched.length
+      hasMore = offset + rows.length < enriched.length
     }
 
     return {
@@ -145,5 +189,3 @@ export const associationsReportService = {
     }
   },
 }
-
-void sql

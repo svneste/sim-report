@@ -215,16 +215,17 @@ export function AssociationsReportPage() {
               {loading && Array.from({ length: 5 }).map((_, i) => (
                 <tr key={`sk-${i}`} className="border-b border-zinc-200 dark:border-zinc-800 last:border-0">
                   <td className="sticky left-0 z-10 bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 px-3">
-                    <div className="flex items-center h-[36px]">
+                    <div className="flex flex-col justify-center gap-1.5 h-[48px]">
                       <div className="h-2.5 w-40 bg-zinc-200 dark:bg-zinc-800 rounded-full animate-pulse" />
+                      <div className="h-2 w-24 bg-zinc-200 dark:bg-zinc-800 rounded-full animate-pulse" />
                     </div>
                   </td>
                   {days.map(d => (
                     <td key={d} className={`border-l border-zinc-200 dark:border-zinc-800 p-0 ${isWeekend(d) ? 'bg-zinc-100/40 dark:bg-zinc-800/30' : ''}`}>
-                      <div className="h-[36px]" />
+                      <div className="h-[48px]" />
                     </td>
                   ))}
-                  <td className="border-l border-zinc-200 dark:border-zinc-800 p-0 bg-zinc-100/40 dark:bg-zinc-800/30"><div className="h-[36px]" /></td>
+                  <td className="border-l border-zinc-200 dark:border-zinc-800 p-0 bg-zinc-100/40 dark:bg-zinc-800/30"><div className="h-[48px]" /></td>
                 </tr>
               ))}
 
@@ -234,14 +235,24 @@ export function AssociationsReportPage() {
                   className="border-b border-zinc-200 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-800/40 group"
                 >
                   <td className="sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/40 border-r border-zinc-200 dark:border-zinc-800 px-3 transition-colors">
-                    <div className="flex items-center h-[36px]">
+                    <div className="flex flex-col justify-center h-[48px] gap-0.5">
                       <span
-                        className="text-[13px] truncate text-zinc-900 dark:text-zinc-100"
+                        className="text-[13px] font-medium truncate text-zinc-900 dark:text-zinc-100"
                         style={{ maxWidth: 250 }}
                         title={r.association}
                       >
                         {r.association}
                       </span>
+                      <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 dark:text-zinc-400">
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-px rounded bg-zinc-100 dark:bg-zinc-800">
+                          <span className="opacity-70">всего</span>
+                          <span className="font-semibold tabular-nums text-zinc-700 dark:text-zinc-300">{r.lifetimeTotal}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-px rounded bg-zinc-100 dark:bg-zinc-800">
+                          <span className="opacity-70">ср/день</span>
+                          <span className="font-semibold tabular-nums text-zinc-700 dark:text-zinc-300">{r.lifetimeAvgPerDay.toFixed(1)}</span>
+                        </span>
+                      </div>
                     </div>
                   </td>
                   {days.map(d => {
@@ -250,19 +261,19 @@ export function AssociationsReportPage() {
                       <td key={d} className={`border-l border-zinc-200 dark:border-zinc-800 p-0 ${isWeekend(d) ? 'bg-zinc-100/40 dark:bg-zinc-800/30' : ''}`}>
                         {c > 0 ? (
                           <div
-                            className="w-full h-[36px] flex items-center justify-center text-[11px] font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20"
+                            className="w-full h-[48px] flex items-center justify-center text-[11px] font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20"
                             title={`${r.association}: ${c} шт.`}
                           >
                             {c}
                           </div>
                         ) : (
-                          <div className="w-full h-[36px]" />
+                          <div className="w-full h-[48px]" />
                         )}
                       </td>
                     )
                   })}
                   <td className="border-l border-zinc-200 dark:border-zinc-800 p-0">
-                    <div className="h-[36px] flex items-center justify-center text-[12px] font-semibold px-2 text-zinc-900 dark:text-zinc-100">
+                    <div className="h-[48px] flex items-center justify-center text-[12px] font-semibold px-2 text-zinc-900 dark:text-zinc-100">
                       {r.total}
                     </div>
                   </td>

@@ -1,9 +1,11 @@
 import { http } from '../../../shared/api/http'
 
 export interface AssociationRow {
-  association: string
-  total:       number
-  counts:      Record<number, number>
+  association:       string
+  total:             number
+  counts:            Record<number, number>
+  lifetimeTotal:     number
+  lifetimeAvgPerDay: number
 }
 
 export interface AssociationOption {
