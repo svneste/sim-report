@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { SimCalendarPage } from '../features/sim-calendar/SimCalendarPage'
-import { LeadsReportPage } from '../features/leads-report/LeadsReportPage'
+import { AssociationsReportPage } from '../features/associations-report/AssociationsReportPage'
 import { ThemeToggle } from '../shared/theme/ThemeToggle'
 
-type Tab = 'sim' | 'leads'
+type Tab = 'sim' | 'associations'
 
 interface TabDef {
   id:    Tab
@@ -11,8 +11,8 @@ interface TabDef {
 }
 
 const TABS: TabDef[] = [
-  { id: 'sim',   label: 'Подключения сим-карт' },
-  { id: 'leads', label: 'Отчёт по заявкам' },
+  { id: 'sim',          label: 'Подключения сим-карт' },
+  { id: 'associations', label: 'Заявки по объединениям' },
 ]
 
 /**
@@ -69,8 +69,8 @@ export function App() {
       </header>
 
       <main className="max-w-[1600px] mx-auto p-6">
-        {tab === 'sim'   && <SimCalendarPage />}
-        {tab === 'leads' && <LeadsReportPage />}
+        {tab === 'sim'          && <SimCalendarPage />}
+        {tab === 'associations' && <AssociationsReportPage />}
       </main>
     </div>
   )
