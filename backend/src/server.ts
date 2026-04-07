@@ -3,6 +3,7 @@ import cors from '@fastify/cors'
 import { config } from './core/config.js'
 import { logger } from './core/logger.js'
 import { simReportRoutes } from './modules/sim-report/sim-report.routes.js'
+import { leadsReportRoutes } from './modules/leads-report/leads-report.routes.js'
 import { startSyncCron } from './modules/sync/sync.cron.js'
 import { syncService } from './modules/sync/sync.service.js'
 import { usersRoutes } from './modules/users/users.routes.js'
@@ -27,6 +28,7 @@ app.post('/api/sync/run', async (req) => {
 })
 
 await app.register(simReportRoutes)
+await app.register(leadsReportRoutes)
 await app.register(usersRoutes)
 
 app.listen({ port: config.PORT, host: config.HOST })

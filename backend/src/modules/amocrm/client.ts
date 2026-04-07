@@ -86,4 +86,66 @@ export const amocrm = {
   async *users(): AsyncGenerator<AmoUser> {
     yield* paginate<AmoUser>('/api/v4/users?limit=250', 'users')
   },
+
+  /**
+   * Список статусов воронки. Используем для определения первой стадии
+   * (минимальный sort) и для подписей в отчётах. Системные статусы
+   * 142 (успех) и 143 (закрыт-не-реализовано) тоже приходят.
+   */
+  async pipelineStatuses(pipelineId: number): Promise<AmoStatus[]> {
+    const env = await request<{ _embedded?: { statuses?: AmoStatus[] } }>(
+      `/api/v4/leads/pipelines/${pipelineId}/statuses`,
+    )
+    return env._embedded?.statuses ?? []
+  },
+
+  /**
+   * Справочник причин закрытия (loss reasons) для всего аккаунта.
+   * Нужен, чтобы по loss_reason_id из сделки получить человекочитаемое имя.
+   */
+  async lossReasons(): Promise<AmoLossReason[]> {
+    const all: AmoLossReason[] = []
+    for await (const r of paginate<AmoLossReason>('/api/v4/leads/loss_reasons?limit=250', 'loss_reasons')) {
+      all.push(r)
+    }
+    return all
+  },
+
+  /**
+   * События смены статуса сделок за период. amoCRM v4 не умеет фильтровать
+   * по pipeline_id или по value_before — отбираем уже на нашей стороне.
+   */
+  async *leadStatusChangedEvents(fromSec: number, toSec: number): AsyncGenerator<AmoStatusChangedEvent> {
+    const params = new URLSearchParams()
+    params.set('filter[type]',              'lead_status_changed')
+    params.set('filter[entity]',            'lead')
+    params.set('filter[created_at][from]',  String(fromSec))
+    params.set('filter[created_at][to]',    String(toSec))
+    params.set('limit',                     '100')
+    yield* paginate<AmoStatusChangedEvent>(`/api/v4/events?${params.toString()}`, 'events')
+  },
+}
+
+export interface AmoStatus {
+  id:          number
+  name:        string
+  sort:        number
+  pipeline_id: number
+  color?:      string
+  type?:       number
+}
+
+export interface AmoLossReason {
+  id:   number
+  name: string
+}
+
+export interface AmoStatusChangedEvent {
+  id:           string
+  type:         'lead_status_changed'
+  entity_id:    number
+  entity_type:  'lead'
+  created_at:   number
+  value_before?: Array<{ lead_status?: { id: number; pipeline_id: number } }>
+  value_after?:  Array<{ lead_status?: { id: number; pipeline_id: number } }>
 }
