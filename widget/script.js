@@ -9,9 +9,10 @@
  */
 define(['jquery'], function ($) {
   // ==== Конфиг ====
-  // ВАЖНО: замените на реальные URL продакшен-окружения. https обязателен.
-  var FRONT_URL   = 'http://localhost:5173'
-  var BACKEND_URL = 'http://localhost:3101'
+  // Прод: фронт и backend живут за одним Caddy на одном домене.
+  // Фронт отдаётся nginx-ом, /api/* проксируется в Fastify backend.
+  var FRONT_URL   = 'https://account.mskmegafon.ru'
+  var BACKEND_URL = 'https://account.mskmegafon.ru'
 
   /**
    * Извлекает map { userId: avatarUrl } из AMOCRM.constant('account').
@@ -73,12 +74,46 @@ define(['jquery'], function ($) {
   var CustomWidget = function () {
     var self = this
 
+    /**
+     * Рендер iframe в области расширенных настроек виджета.
+     * Вызывается из нескольких callback-ов, т.к. amoCRM в разных версиях
+     * вызывает то advanced, то advancedSettings.
+     */
+    function renderIframe() {
+      try {
+        var code = (self.get_settings && self.get_settings().widget_code) || 'sim'
+        // Перебираем все известные контейнеры, в которые amoCRM сажает виджеты:
+        // - #work-area-<code>     — advanced_settings
+        // - #work-area            — fallback
+        // - .widget-page__content / [data-id="widget_page"] — left menu (widget_page)
+        var $area = $('#work-area-' + code)
+        if (!$area.length) $area = $('#work-area')
+        if (!$area.length) $area = $('.widget-page__content').first()
+        if (!$area.length) $area = $('[data-id="widget_page"]').first()
+        if (!$area.length) $area = $('.widget-settings__work-area').first()
+        if (!$area.length) $area = $('#page_holder')
+        if (!$area.length) {
+          if (window.console) console.warn('[sim_report] work-area not found, dumping body classes:', document.body.className)
+          return
+        }
+        if ($area.find('iframe[data-sim-report]').length) return
+        $area.html(
+          '<iframe data-sim-report="1" ' +
+          '  src="' + FRONT_URL + '"' +
+          '  style="width:100%;height:calc(100vh - 60px);min-height:600px;border:0;background:#fafafa;display:block"' +
+          '  allow="clipboard-read; clipboard-write"' +
+          '></iframe>'
+        )
+      } catch (e) {
+        if (window.console) console.warn('[sim_report] renderIframe failed', e)
+      }
+    }
+
     self.callbacks = {
       settings: function () { return true },
       bind_actions: function () { return true },
       render: function () { return true },
       destroy: function () {},
-      advancedSettings: function () { return true },
       onSave: function () { return true },
 
       init: function () {
@@ -88,21 +123,32 @@ define(['jquery'], function ($) {
       },
 
       /**
-       * Точка входа для location: advanced (пункт левого меню).
+       * Точка входа для location: advanced_settings.
+       * amoCRM в зависимости от версии зовёт либо advanced, либо advancedSettings.
        */
-      advanced: function () {
-        // На всякий случай — повторная отправка (вдруг init не успел)
+      advancedSettings: function () {
+        if (window.console) console.log('[sim_report] advancedSettings called')
         pushAvatars()
+        renderIframe()
+        return true
+      },
 
-        var $area = $('#work-area-' + self.get_settings().widget_code)
-        if (!$area.length) $area = $('#work-area')
-        $area.html(
-          '<iframe ' +
-          '  src="' + FRONT_URL + '"' +
-          '  style="width:100%;height:calc(100vh - 80px);border:0;background:#fafafa"' +
-          '  allow="clipboard-read; clipboard-write"' +
-          '></iframe>'
-        )
+      advanced: function () {
+        if (window.console) console.log('[sim_report] advanced called')
+        pushAvatars()
+        renderIframe()
+        return true
+      },
+
+      /**
+       * Точка входа для location: widget_page (пункт левого меню).
+       * amoCRM вызывает этот callback при клике на наш пункт в левом меню,
+       * параметры: { location: 'widget_page', item_code: 'sim_report', ... }
+       */
+      initMenuPage: function (params) {
+        if (window.console) console.log('[sim_report] initMenuPage called', params)
+        pushAvatars()
+        renderIframe()
         return true
       },
     }

@@ -23,3 +23,14 @@ export interface SimReportPayload {
 export function fetchSimReport(year: number, month: number): Promise<SimReportPayload> {
   return http<SimReportPayload>(`/api/sim-report?year=${year}&month=${month}`)
 }
+
+export interface SimReportDeal {
+  id:          number
+  name:        string | null
+  association: string | null
+  url:         string
+}
+
+export function fetchDealsForCell(userId: number, date: string): Promise<{ deals: SimReportDeal[] }> {
+  return http<{ deals: SimReportDeal[] }>(`/api/sim-report/deals?userId=${userId}&date=${encodeURIComponent(date)}`)
+}

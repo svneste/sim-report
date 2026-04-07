@@ -1,7 +1,14 @@
-import { and, asc, between, inArray, notInArray, sql } from 'drizzle-orm'
+import { and, asc, between, eq, inArray, notInArray, sql } from 'drizzle-orm'
 import { db } from '../../db/client.js'
-import { amocrmUsers, simRegistrations } from '../../db/schema.js'
+import { amocrmDeals, amocrmUsers, simRegistrations } from '../../db/schema.js'
 import { config } from '../../core/config.js'
+
+/**
+ * ID custom-поля "Объединение" в amoCRM. Захардкожен здесь, потому что
+ * это часть домена отчёта, а не общая настройка интеграции.
+ * Если у поля поменяется ID — меняем тут.
+ */
+const ASSOCIATION_FIELD_ID = 539431
 
 export interface SimReportUser {
   id:     number
@@ -21,6 +28,13 @@ export interface SimReportPayload {
   month:   number // 1..12
   users:   SimReportUser[]
   entries: SimReportEntry[]
+}
+
+export interface SimReportDeal {
+  id:          number
+  name:        string | null
+  association: string | null
+  url:         string
 }
 
 function monthRange(year: number, month: number): { from: string; to: string } {
@@ -73,6 +87,53 @@ export const simReportService = {
 
     return { year, month, users, entries }
   },
+
+  /**
+   * Возвращает список сделок, оформленных конкретным сотрудником в указанный день.
+   * Используется для всплывающего окна при клике на цифру в календаре.
+   */
+  async getDealsForCell(userId: number, date: string): Promise<SimReportDeal[]> {
+    const rows = await db
+      .select({
+        id:   amocrmDeals.id,
+        name: amocrmDeals.name,
+        raw:  amocrmDeals.raw,
+      })
+      .from(simRegistrations)
+      .innerJoin(amocrmDeals, eq(amocrmDeals.id, simRegistrations.dealId))
+      .where(
+        and(
+          eq(simRegistrations.responsibleUserId, userId),
+          eq(simRegistrations.registeredOn, date),
+        ),
+      )
+      .orderBy(asc(amocrmDeals.id))
+
+    const baseUrl = `https://${config.AMOCRM_SUBDOMAIN}.amocrm.ru/leads/detail/`
+
+    return rows.map(r => ({
+      id:          Number(r.id),
+      name:        r.name,
+      association: extractAssociation(r.raw),
+      url:         `${baseUrl}${r.id}`,
+    }))
+  },
+}
+
+/**
+ * Достаёт значение custom-поля "Объединение" из сырого payload сделки.
+ * Поле может быть text/select/multi-select — приводим к строке.
+ */
+function extractAssociation(raw: unknown): string | null {
+  if (!raw || typeof raw !== 'object') return null
+  const fields = (raw as { custom_fields_values?: Array<{ field_id: number; values?: Array<{ value: unknown }> }> | null }).custom_fields_values
+  if (!fields) return null
+  const f = fields.find(x => x.field_id === ASSOCIATION_FIELD_ID)
+  if (!f || !f.values || !f.values.length) return null
+  const parts = f.values
+    .map(v => (v.value == null ? '' : String(v.value)))
+    .filter(Boolean)
+  return parts.length ? parts.join(', ') : null
 }
 
 void sql; void inArray

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useSimReport } from './hooks/useSimReport'
+import { CellDealsModal } from './CellDealsModal'
 import {
   DAY_NAMES_SHORT,
   MONTH_NAMES_NOM,
@@ -7,6 +8,13 @@ import {
   dayOfWeekMon0,
   daysInMonth,
 } from '../../shared/lib/date'
+
+interface OpenedCell {
+  userId:    number
+  userName:  string
+  date:      string
+  dateLabel: string
+}
 
 function getInitials(name: string): string {
   const p = name.trim().split(' ')
@@ -22,6 +30,8 @@ export function SimCalendarPage() {
   const month1 = month0 + 1
 
   const { loading, error, users, countFor, reload } = useSimReport(year, month1)
+
+  const [openedCell, setOpenedCell] = useState<OpenedCell | null>(null)
 
   const days = useMemo(
     () => Array.from({ length: daysInMonth(year, month1) }, (_, i) => i + 1),
@@ -173,18 +183,26 @@ export function SimCalendarPage() {
                   </td>
                   {days.map(d => {
                     const c = cell(u.id, d)
+                    const dk = dateKey(year, month1, d)
                     return (
                       <td key={d} className={`border-l border-zinc-200 dark:border-zinc-800 p-0 ${isWeekend(d) ? 'bg-zinc-100/40 dark:bg-zinc-800/30' : ''}`}>
-                        <div
-                          className={`w-full h-[36px] flex items-center justify-center text-[11px] font-semibold ${
-                            c > 0
-                              ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 cursor-pointer hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20 dark:hover:bg-emerald-500/20'
-                              : ''
-                          }`}
-                          title={c > 0 ? `${u.name}: ${c} шт.` : ''}
-                        >
-                          {c > 0 ? c : ''}
-                        </div>
+                        {c > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setOpenedCell({
+                              userId:    u.id,
+                              userName:  u.name,
+                              date:      dk,
+                              dateLabel: `${d} ${MONTH_NAMES_NOM[month0].toLowerCase()} ${year}`,
+                            })}
+                            className="w-full h-[36px] flex items-center justify-center text-[11px] font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 cursor-pointer hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20 dark:hover:bg-emerald-500/20 transition-colors"
+                            title={`${u.name}: ${c} шт. — нажмите, чтобы посмотреть сделки`}
+                          >
+                            {c}
+                          </button>
+                        ) : (
+                          <div className="w-full h-[36px]" />
+                        )}
                       </td>
                     )
                   })}
@@ -235,6 +253,16 @@ export function SimCalendarPage() {
           </table>
         </div>
       </div>
+
+      {openedCell && (
+        <CellDealsModal
+          userId={openedCell.userId}
+          userName={openedCell.userName}
+          date={openedCell.date}
+          dateLabel={openedCell.dateLabel}
+          onClose={() => setOpenedCell(null)}
+        />
+      )}
     </div>
   )
 }

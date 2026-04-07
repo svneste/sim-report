@@ -1,30 +1,40 @@
 {
   "widget": {
-    "name": "sim_report",
-    "code": "sim_report",
-    "version": "0.1.0",
-    "description": "Отчёт по оформлению сим-карт сотрудниками",
-    "secret_key": "",
+    "name": "widget.name",
+    "version": "0.1.1",
+    "description": "widget.description",
+    "short_description": "widget.short_description",
     "interface_version": 2,
     "init_once": false,
     "locale": ["ru"],
-    "installation": false,
+    "installation": true,
     "support": {
-      "link": "",
-      "email": ""
+      "link": "https://account.mskmegafon.ru",
+      "email": "support@mskmegafon.ru"
     }
   },
   "locations": [
     "advanced_settings",
     "settings",
-    "lcard",
-    "ccard"
+    "widget_page"
   ],
-  "dp": {},
-  "advanced": {
-    "title": "Отчёт по сим-картам",
-    "title_lang": {
-      "ru": "Отчёт по сим-картам"
+  "left_menu": {
+    "sim_report": {
+      "title": "left_menu.sim_report",
+      "icons": {
+        "light": "images/menu_light.svg",
+        "dark": "images/menu_dark.svg"
+      }
     }
+  },
+  "settings": {
+    "backend_url": {
+      "name": "settings.backend_url",
+      "type": "text",
+      "required": false
+    }
+  },
+  "advanced": {
+    "title": "advanced.title"
   }
 }
