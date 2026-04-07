@@ -1,0 +1,30 @@
+{
+  "widget": {
+    "name": "sim_report",
+    "code": "sim_report",
+    "version": "0.1.0",
+    "description": "Отчёт по оформлению сим-карт сотрудниками",
+    "secret_key": "",
+    "interface_version": 2,
+    "init_once": false,
+    "locale": ["ru"],
+    "installation": false,
+    "support": {
+      "link": "",
+      "email": ""
+    }
+  },
+  "locations": [
+    "advanced_settings",
+    "settings",
+    "lcard",
+    "ccard"
+  ],
+  "dp": {},
+  "advanced": {
+    "title": "Отчёт по сим-картам",
+    "title_lang": {
+      "ru": "Отчёт по сим-картам"
+    }
+  }
+}

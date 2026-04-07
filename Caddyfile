@@ -1,0 +1,14 @@
+account.mskmegafon.ru {
+    encode zstd gzip
+
+    # /api/* идут в backend (Fastify)
+    @api path /api/*
+    handle @api {
+        reverse_proxy backend:3001
+    }
+
+    # всё остальное — в nginx со статикой фронта
+    handle {
+        reverse_proxy frontend:80
+    }
+}

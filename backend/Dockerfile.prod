@@ -1,0 +1,22 @@
+# Multi-stage prod image: build TS → run compiled JS on slim node.
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build
+
+FROM node:20-alpine AS prod
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+COPY --from=builder /app/dist ./dist
+# migrate.ts loads SQL from a path relative to cwd (./src/db/migrations),
+# so we copy the raw migration files into the same layout in the prod image.
+COPY --from=builder /app/src/db/migrations ./src/db/migrations
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
+EXPOSE 3001
+ENTRYPOINT ["./docker-entrypoint.sh"]

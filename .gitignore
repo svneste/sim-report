@@ -1,0 +1,14 @@
+node_modules
+dist
+.env
+.env.local
+*.log
+.DS_Store
+backend/.env
+frontend/.env
+widget/*.zip
+
+# Приватные ключи и секреты для деплоя — никогда в git
+.deploy/
+backend.env
+
