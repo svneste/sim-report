@@ -13,9 +13,16 @@ await app.register(cors, { origin: config.CORS_ORIGIN === '*' ? true : config.CO
 
 app.get('/health', async () => ({ ok: true }))
 
-// Ручной запуск синхронизации (полезно для отладки и кнопки в админке)
-app.post('/api/sync/run', async () => {
-  const res = await syncService.run()
+// Ручной запуск синхронизации.
+// Без параметров — полный sync (тянет всю воронку, тяжело).
+// ?hours=N — инкрементальный sync за последние N часов (для кнопки "Обновить" в UI).
+app.post('/api/sync/run', async (req) => {
+  const q = req.query as { hours?: string } | undefined
+  const hours = q?.hours ? Number(q.hours) : NaN
+  const sinceSec = Number.isFinite(hours) && hours > 0
+    ? Math.floor(Date.now() / 1000) - Math.floor(hours * 3600)
+    : undefined
+  const res = await syncService.run(sinceSec)
   return res
 })
 

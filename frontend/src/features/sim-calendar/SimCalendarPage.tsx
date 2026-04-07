@@ -29,7 +29,8 @@ export function SimCalendarPage() {
   const month0 = view.getMonth()
   const month1 = month0 + 1
 
-  const { loading, error, users, countFor, reload } = useSimReport(year, month1)
+  const { loading, syncing, error, users, countFor, refresh } = useSimReport(year, month1)
+  const busy = loading || syncing
 
   const [openedCell, setOpenedCell] = useState<OpenedCell | null>(null)
 
@@ -72,23 +73,24 @@ export function SimCalendarPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={prev}
-            disabled={loading}
+            disabled={busy}
             className="w-8 h-8 flex items-center justify-center rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 disabled:opacity-40 transition-colors"
           >‹</button>
           <div className="min-w-[160px] text-center text-sm font-semibold">
-            {monthLabel}{loading && ' …'}
+            {monthLabel}{busy && ' …'}
           </div>
           <button
             onClick={next}
-            disabled={loading}
+            disabled={busy}
             className="w-8 h-8 flex items-center justify-center rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 disabled:opacity-40 transition-colors"
           >›</button>
           <button
-            onClick={() => void reload()}
-            disabled={loading}
+            onClick={() => void refresh()}
+            disabled={busy}
             className="ml-2 px-3 h-8 rounded-lg border border-zinc-200 bg-white text-sm hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 disabled:opacity-40 transition-colors"
+            title="Запросить актуальные данные из amoCRM"
           >
-            Обновить
+            {syncing ? 'Синхронизация…' : 'Обновить'}
           </button>
         </div>
       </div>

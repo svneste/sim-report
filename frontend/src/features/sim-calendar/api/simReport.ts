@@ -34,3 +34,20 @@ export interface SimReportDeal {
 export function fetchDealsForCell(userId: number, date: string): Promise<{ deals: SimReportDeal[] }> {
   return http<{ deals: SimReportDeal[] }>(`/api/sim-report/deals?userId=${userId}&date=${encodeURIComponent(date)}`)
 }
+
+export interface SyncRunResult {
+  leadsUpserted:    number
+  usersUpserted:    number
+  simRowsUpserted:  number
+  startedAt:        string
+  finishedAt:       string
+}
+
+/**
+ * Триггерит синхронизацию с amoCRM.
+ * @param hours окно инкрементального sync (по умолчанию 6 часов).
+ *              Не передавай 0 — это запустит полный sync на десятки тысяч сделок.
+ */
+export function runSync(hours = 6): Promise<SyncRunResult> {
+  return http<SyncRunResult>(`/api/sync/run?hours=${hours}`, { method: 'POST' })
+}
