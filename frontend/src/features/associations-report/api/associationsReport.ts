@@ -4,8 +4,9 @@ export interface AssociationRow {
   association:       string
   total:             number
   counts:            Record<number, number>
-  lifetimeTotal:     number
-  lifetimeAvgPerDay: number
+  lifetimeTotal:       number
+  lifetimeAvgPerDay:   number
+  lifetimeAvgPerMonth: number
 }
 
 export interface AssociationOption {

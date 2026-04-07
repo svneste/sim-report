@@ -252,6 +252,10 @@ export function AssociationsReportPage() {
                           <span className="opacity-70">ср/день</span>
                           <span className="font-semibold tabular-nums text-zinc-700 dark:text-zinc-300">{r.lifetimeAvgPerDay.toFixed(1)}</span>
                         </span>
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-px rounded bg-zinc-100 dark:bg-zinc-800">
+                          <span className="opacity-70">ср/мес</span>
+                          <span className="font-semibold tabular-nums text-zinc-700 dark:text-zinc-300">{r.lifetimeAvgPerMonth.toFixed(1)}</span>
+                        </span>
                       </div>
                     </div>
                   </td>

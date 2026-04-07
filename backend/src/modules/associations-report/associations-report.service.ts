@@ -22,6 +22,8 @@ export interface AssociationRow {
   lifetimeTotal: number
   /** Среднее количество оформлений в день (на активные дни, 1 знак после запятой) */
   lifetimeAvgPerDay: number
+  /** Среднее количество оформлений в месяц (на активные месяцы, 1 знак после запятой) */
+  lifetimeAvgPerMonth: number
 }
 
 export interface AssociationOption {
@@ -69,8 +71,10 @@ interface MonthlyAgg {
 
 interface LifetimeAgg {
   total: number
-  /** Множество уникальных дат, в которые были оформления — для расчёта среднего */
-  days:  Set<string>
+  /** Множество уникальных дат (YYYY-MM-DD), в которые были оформления */
+  days:   Set<string>
+  /** Множество уникальных месяцев (YYYY-MM) — для расчёта ср/месяц */
+  months: Set<string>
 }
 
 export const associationsReportService = {
@@ -116,11 +120,12 @@ export const associationsReportService = {
       // Lifetime — копим всегда
       let lt = lifetime.get(assoc)
       if (!lt) {
-        lt = { total: 0, days: new Set<string>() }
+        lt = { total: 0, days: new Set<string>(), months: new Set<string>() }
         lifetime.set(assoc, lt)
       }
       lt.total += 1
       lt.days.add(date)
+      lt.months.add(date.slice(0, 7))
 
       // Месячное — только если попадает в окно
       if (date >= from && date <= to) {
@@ -141,8 +146,12 @@ export const associationsReportService = {
       const lt = lifetime.get(assoc)
       const lifetimeTotal = lt?.total ?? 0
       const activeDays    = lt?.days.size ?? 0
+      const activeMonths  = lt?.months.size ?? 0
       const lifetimeAvgPerDay = activeDays > 0
         ? Math.round((lifetimeTotal / activeDays) * 10) / 10
+        : 0
+      const lifetimeAvgPerMonth = activeMonths > 0
+        ? Math.round((lifetimeTotal / activeMonths) * 10) / 10
         : 0
       return {
         association:       assoc,
@@ -150,6 +159,7 @@ export const associationsReportService = {
         counts:            m.counts,
         lifetimeTotal,
         lifetimeAvgPerDay,
+        lifetimeAvgPerMonth,
       }
     })
 
