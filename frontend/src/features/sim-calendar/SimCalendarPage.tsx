@@ -32,7 +32,7 @@ export function SimCalendarPage() {
 
   const {
     loading, syncing, error, users, countFor, refresh,
-    prevMonthDayTotals, prevMonthMeta,
+    prevMonthMeta, entries, prevEntries,
   } = useSimReport(year, month1)
   const busy = loading || syncing
 
@@ -265,8 +265,9 @@ export function SimCalendarPage() {
           <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm p-5">
             <MonthlyTotalsChart
               days={days}
-              current={dayTotals}
-              previous={prevMonthDayTotals}
+              users={users}
+              entries={entries}
+              prevEntries={prevEntries}
               currentLabel={monthLabel}
               previousLabel={
                 prevMonthMeta

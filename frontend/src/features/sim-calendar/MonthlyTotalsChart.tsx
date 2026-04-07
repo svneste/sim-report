@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Area,
   CartesianGrid,
@@ -10,16 +10,16 @@ import {
   YAxis,
 } from 'recharts'
 import { useTheme } from '../../shared/theme/useTheme'
+import type { SimReportEntry, SimReportUser } from './api/simReport'
 
 export interface MonthlyTotalsChartProps {
   /** Дни месяца, которые должны быть на оси X (1..N) */
   days: number[]
-  /** Количество оформлений по дням текущего месяца */
-  current: Record<number, number>
-  /** Количество оформлений по дням предыдущего месяца — для серой пунктирной линии */
-  previous: Record<number, number>
-  currentLabel:  string // напр. "Апрель 2026"
-  previousLabel: string // напр. "Март 2026"
+  users:        SimReportUser[]
+  entries:      SimReportEntry[]
+  prevEntries:  SimReportEntry[]
+  currentLabel: string
+  previousLabel: string
 }
 
 interface ChartRow {
@@ -28,36 +28,85 @@ interface ChartRow {
   previous: number
 }
 
+function getInitials(name: string): string {
+  const p = name.trim().split(' ')
+  return ((p[0]?.[0] ?? '') + (p[1]?.[0] ?? '')).toUpperCase()
+}
+
+/**
+ * Суммирует entries в формат { day: count }, опционально фильтруя по списку userId.
+ * Если selected пустое — берём всех (без фильтра).
+ */
+function sumByDay(entries: SimReportEntry[], selected: Set<number>): Record<number, number> {
+  const out: Record<number, number> = {}
+  const filterOn = selected.size > 0
+  for (const e of entries) {
+    if (filterOn && !selected.has(e.userId)) continue
+    const day = Number(e.date.slice(8, 10))
+    out[day] = (out[day] ?? 0) + e.count
+  }
+  return out
+}
+
 /**
  * График динамики оформлений по дням, на recharts.
- * Можно расширять (доп. серии, brush для зума, события, drill-down)
- * без переписывания — recharts композируется через JSX.
+ * Под графиком — мульти-выбор сотрудников: клик по чипу включает/выключает
+ * пользователя, цифры в графике пересчитываются. Прошлый месяц фильтруется
+ * тем же набором юзеров.
  */
 export function MonthlyTotalsChart({
   days,
-  current,
-  previous,
+  users,
+  entries,
+  prevEntries,
   currentLabel,
   previousLabel,
 }: MonthlyTotalsChartProps) {
   const { theme } = useTheme()
   const isDark = theme === 'dark'
 
-  const data: ChartRow[] = useMemo(
-    () => days.map(d => ({
+  const [selected, setSelected] = useState<Set<number>>(() => new Set())
+
+  function toggleUser(id: number) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  function clearAll() { setSelected(new Set()) }
+
+  const isAll = selected.size === 0
+
+  // Сумма по всему месяцу для каждого юзера — для бейджа на чипе и сортировки
+  const userMonthTotals = useMemo(() => {
+    const t: Record<number, number> = {}
+    for (const e of entries) t[e.userId] = (t[e.userId] ?? 0) + e.count
+    return t
+  }, [entries])
+
+  // Юзеры в чипах сортируем по убыванию вклада в текущий месяц
+  const sortedUsers = useMemo(() => {
+    return [...users].sort((a, b) => (userMonthTotals[b.id] ?? 0) - (userMonthTotals[a.id] ?? 0))
+  }, [users, userMonthTotals])
+
+  const data: ChartRow[] = useMemo(() => {
+    const cur  = sumByDay(entries, selected)
+    const prev = sumByDay(prevEntries, selected)
+    return days.map(d => ({
       day:      d,
-      current:  current[d]  ?? 0,
-      previous: previous[d] ?? 0,
-    })),
-    [days, current, previous],
-  )
+      current:  cur[d]  ?? 0,
+      previous: prev[d] ?? 0,
+    }))
+  }, [days, entries, prevEntries, selected])
 
   // Цвета: emerald-500 / zinc-* в зависимости от темы
-  const colorCurrent  = '#10b981' // emerald-500
-  const colorPrevious = isDark ? '#52525b' : '#a1a1aa' // zinc-600 / zinc-400
+  const colorCurrent  = '#10b981'
+  const colorPrevious = isDark ? '#52525b' : '#a1a1aa'
   const colorAxis     = isDark ? '#52525b' : '#a1a1aa'
-  const colorGrid     = isDark ? '#27272a' : '#e4e4e7' // zinc-800 / zinc-200
-  const colorTooltip  = isDark ? '#18181b' : '#ffffff' // zinc-900 / white
+  const colorGrid     = isDark ? '#27272a' : '#e4e4e7'
+  const colorTooltip  = isDark ? '#18181b' : '#ffffff'
   const colorTooltipBorder = isDark ? '#27272a' : '#e4e4e7'
 
   return (
@@ -165,6 +214,67 @@ export function MonthlyTotalsChart({
             />
           </ComposedChart>
         </ResponsiveContainer>
+      </div>
+
+      {/* Чипы с быстрым фильтром по сотрудникам */}
+      <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[11px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 font-semibold">
+            Сотрудники
+          </div>
+          {!isAll && (
+            <button
+              onClick={clearAll}
+              className="text-[11px] text-emerald-700 dark:text-emerald-400 hover:underline"
+            >
+              Сбросить
+            </button>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            onClick={clearAll}
+            className={`px-2.5 h-7 rounded-full text-[11px] font-medium border transition-colors ${
+              isAll
+                ? 'bg-emerald-500 text-white border-emerald-500'
+                : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+            }`}
+          >
+            Все
+          </button>
+          {sortedUsers.map(u => {
+            const active = selected.has(u.id)
+            const total  = userMonthTotals[u.id] ?? 0
+            return (
+              <button
+                key={u.id}
+                onClick={() => toggleUser(u.id)}
+                className={`pl-1 pr-2.5 h-7 rounded-full text-[11px] font-medium border flex items-center gap-1.5 transition-colors ${
+                  active
+                    ? 'bg-emerald-500 text-white border-emerald-500'
+                    : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                }`}
+                title={`${u.name}: ${total} шт. в текущем месяце`}
+              >
+                {u.avatar
+                  ? <img src={u.avatar} alt="" className="w-5 h-5 rounded-full object-cover" />
+                  : (
+                    <span className={`w-5 h-5 rounded-full text-[8px] font-bold flex items-center justify-center ${
+                      active
+                        ? 'bg-white/20 text-white'
+                        : 'bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-900'
+                    }`}>
+                      {getInitials(u.name)}
+                    </span>
+                  )}
+                <span className="truncate max-w-[120px]">{u.name}</span>
+                <span className={`tabular-nums ${active ? 'text-white/80' : 'text-zinc-400 dark:text-zinc-500'}`}>
+                  {total}
+                </span>
+              </button>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

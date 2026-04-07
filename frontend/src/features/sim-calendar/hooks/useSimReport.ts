@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { fetchSimReport, runSync, type SimReportPayload, type SimReportUser } from '../api/simReport'
+import { fetchSimReport, runSync, type SimReportEntry, type SimReportPayload, type SimReportUser } from '../api/simReport'
 
 export interface UseSimReportResult {
   loading:  boolean
@@ -16,6 +16,9 @@ export interface UseSimReportResult {
   dayTotals:          Record<number, number>
   prevMonthDayTotals: Record<number, number>
   prevMonthMeta:      { year: number; month: number; daysInMonth: number } | null
+  /** Per-user per-day записи — нужны для фильтра по сотрудникам на графике. */
+  entries:            SimReportEntry[]
+  prevEntries:        SimReportEntry[]
 }
 
 export function useSimReport(year: number, month: number): UseSimReportResult {
@@ -82,5 +85,7 @@ export function useSimReport(year: number, month: number): UseSimReportResult {
     dayTotals:          data?.dayTotals          ?? {},
     prevMonthDayTotals: data?.prevMonthDayTotals ?? {},
     prevMonthMeta:      data?.prevMonth          ?? null,
+    entries:            data?.entries            ?? [],
+    prevEntries:        data?.prevEntries        ?? [],
   }
 }
