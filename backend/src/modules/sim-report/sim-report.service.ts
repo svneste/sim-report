@@ -114,12 +114,9 @@ export const simReportService = {
     const prevMonthN  = month === 1 ? 12 : month - 1
     const prevEntries = await fetchEntriesByUserDay(prevYear, prevMonthN, excluded)
 
-    // Объединённый список user_ids — текущий + прошлый месяц,
-    // чтобы при фильтре по сотруднику он гарантированно был в users[]
-    const userIds = Array.from(new Set([
-      ...entries.map(e => e.userId),
-      ...prevEntries.map(e => e.userId),
-    ]))
+    // В таблицу попадают только сотрудники, у которых есть оформления
+    // в текущем месяце — пустые строки в календаре только зашумляют отчёт.
+    const userIds = Array.from(new Set(entries.map(e => e.userId)))
     const usersData = userIds.length
       ? await db.select().from(amocrmUsers).where(inArray(amocrmUsers.id, userIds))
       : []
