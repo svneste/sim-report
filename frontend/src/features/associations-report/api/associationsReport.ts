@@ -6,6 +6,11 @@ export interface AssociationRow {
   counts:      Record<number, number>
 }
 
+export interface AssociationOption {
+  name:  string
+  total: number
+}
+
 export interface AssociationsReportPayload {
   year:        number
   month:       number
@@ -13,6 +18,7 @@ export interface AssociationsReportPayload {
   grandTotal:  number
   rows:        AssociationRow[]
   hasMore:     boolean
+  allOptions:  AssociationOption[]
 }
 
 export function fetchAssociationsReport(
@@ -20,6 +26,7 @@ export function fetchAssociationsReport(
   month: number,
   limit: number,
   offset: number,
+  selected: string[] = [],
 ): Promise<AssociationsReportPayload> {
   const params = new URLSearchParams({
     year:   String(year),
@@ -27,5 +34,9 @@ export function fetchAssociationsReport(
     limit:  String(limit),
     offset: String(offset),
   })
+  if (selected.length) {
+    // Разделитель ||| — чтобы запятые внутри названий не ломали парсинг
+    params.set('selected', selected.join('|||'))
+  }
   return http<AssociationsReportPayload>(`/api/associations-report?${params.toString()}`)
 }

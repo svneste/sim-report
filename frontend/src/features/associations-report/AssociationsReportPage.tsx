@@ -8,8 +8,10 @@ import {
 import { runSync } from '../sim-calendar/api/simReport'
 import {
   fetchAssociationsReport,
+  type AssociationOption,
   type AssociationRow,
 } from './api/associationsReport'
+import { AssociationFilter } from './AssociationFilter'
 
 const PAGE_SIZE = 15
 
@@ -22,6 +24,8 @@ export function AssociationsReportPage() {
   const month1 = month0 + 1
 
   const [rows, setRows]               = useState<AssociationRow[]>([])
+  const [allOptions, setAllOptions]   = useState<AssociationOption[]>([])
+  const [selected, setSelected]       = useState<Set<string>>(() => new Set())
   const [totalGroups, setTotalGroups] = useState(0)
   const [grandTotal, setGrandTotal]   = useState(0)
   const [hasMore, setHasMore]         = useState(false)
@@ -30,6 +34,9 @@ export function AssociationsReportPage() {
   const [syncing, setSyncing]         = useState(false)
   const [error, setError]             = useState<string | null>(null)
   const [reloadCounter, setReloadCounter] = useState(0)
+
+  // Сериализованный snapshot выбранных — чтобы не плодить эффекты на Set
+  const selectedKey = useMemo(() => Array.from(selected).sort().join('|||'), [selected])
 
   const days = useMemo(
     () => Array.from({ length: daysInMonth(year, month1) }, (_, i) => i + 1),
@@ -40,15 +47,17 @@ export function AssociationsReportPage() {
   const isToday = (d: number) =>
     today.getFullYear() === year && today.getMonth() === month0 && today.getDate() === d
 
-  // Первоначальная загрузка / смена месяца / refresh
+  // Первоначальная загрузка / смена месяца / refresh / смена фильтра
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetchAssociationsReport(year, month1, PAGE_SIZE, 0)
+    const sel = selectedKey ? selectedKey.split('|||') : []
+    fetchAssociationsReport(year, month1, PAGE_SIZE, 0, sel)
       .then(r => {
         if (cancelled) return
         setRows(r.rows)
+        setAllOptions(r.allOptions)
         setTotalGroups(r.totalGroups)
         setGrandTotal(r.grandTotal)
         setHasMore(r.hasMore)
@@ -58,15 +67,17 @@ export function AssociationsReportPage() {
       })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [year, month1, reloadCounter])
+  }, [year, month1, reloadCounter, selectedKey])
 
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return
     setLoadingMore(true)
     setError(null)
     try {
-      const r = await fetchAssociationsReport(year, month1, PAGE_SIZE, rows.length)
+      // При активном фильтре пагинации нет — но проверяем на всякий случай
+      const r = await fetchAssociationsReport(year, month1, PAGE_SIZE, rows.length, [])
       setRows(prev => [...prev, ...r.rows])
+      setAllOptions(r.allOptions)
       setHasMore(r.hasMore)
       setTotalGroups(r.totalGroups)
       setGrandTotal(r.grandTotal)
@@ -111,9 +122,15 @@ export function AssociationsReportPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
         <h1 className="text-xl font-semibold">Заявки по объединениям</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <AssociationFilter
+            options={allOptions}
+            selected={selected}
+            onChange={setSelected}
+            disabled={busy}
+          />
           <button
             onClick={prev}
             disabled={busy}

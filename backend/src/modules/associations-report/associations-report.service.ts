@@ -30,6 +30,13 @@ export interface AssociationsReportPayload {
   /** Срез [offset, offset+limit) — отсортирован по total desc */
   rows:        AssociationRow[]
   hasMore:     boolean
+  /** Полный список названий объединений за месяц для фильтра (имя + total) */
+  allOptions:  AssociationOption[]
+}
+
+export interface AssociationOption {
+  name:  string
+  total: number
 }
 
 function monthRange(year: number, month: number) {
@@ -61,6 +68,7 @@ export const associationsReportService = {
     month: number,
     limit: number,
     offset: number,
+    selected: string[] = [],
   ): Promise<AssociationsReportPayload> {
     const excluded = config.reportExcludedUserIds
     const { from, to } = monthRange(year, month)
@@ -73,7 +81,7 @@ export const associationsReportService = {
     // Тянем все sim-регистрации месяца с raw сделки.
     // Для текущих объёмов (десятки/сотни в день) это быстрее и проще,
     // чем вытаскивать поле через jsonb-операторы в Postgres.
-    const rows = await db
+    const dbRows = await db
       .select({
         date: simRegistrations.registeredOn,
         raw:  amocrmDeals.raw,
@@ -85,7 +93,7 @@ export const associationsReportService = {
     // Группировка: association → { total, counts[day] }
     const groups = new Map<string, AssociationRow>()
     let grandTotal = 0
-    for (const r of rows) {
+    for (const r of dbRows) {
       const assoc = extractAssociation(r.raw)
       const day   = Number(String(r.date).slice(8, 10))
       let g = groups.get(assoc)
@@ -103,14 +111,37 @@ export const associationsReportService = {
       return a.association.localeCompare(b.association, 'ru')
     })
 
-    const slice = sorted.slice(offset, offset + limit)
+    // Полный список для фильтра — отдаём всегда, не зависит от выбора
+    const allOptions: AssociationOption[] = sorted.map(r => ({
+      name:  r.association,
+      total: r.total,
+    }))
+
+    // Если выбран фильтр — отдаём только выбранные, без пагинации.
+    // Иначе — стандартная пагинация по limit/offset.
+    let rows: AssociationRow[]
+    let hasMore: boolean
+    let totalGroups: number
+
+    if (selected.length) {
+      const set = new Set(selected)
+      rows = sorted.filter(r => set.has(r.association))
+      totalGroups = rows.length
+      hasMore = false
+    } else {
+      rows = sorted.slice(offset, offset + limit)
+      totalGroups = sorted.length
+      hasMore = offset + rows.length < sorted.length
+    }
+
     return {
       year,
       month,
-      totalGroups: sorted.length,
+      totalGroups,
       grandTotal,
-      rows:        slice,
-      hasMore:     offset + slice.length < sorted.length,
+      rows,
+      hasMore,
+      allOptions,
     }
   },
 }
