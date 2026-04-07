@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useSimReport } from './hooks/useSimReport'
 import { CellDealsModal } from './CellDealsModal'
+import { MonthlyTotalsChart } from './MonthlyTotalsChart'
 import {
   DAY_NAMES_SHORT,
   MONTH_NAMES_NOM,
@@ -29,7 +30,10 @@ export function SimCalendarPage() {
   const month0 = view.getMonth()
   const month1 = month0 + 1
 
-  const { loading, syncing, error, users, countFor, refresh } = useSimReport(year, month1)
+  const {
+    loading, syncing, error, users, countFor, refresh,
+    prevMonthDayTotals, prevMonthMeta,
+  } = useSimReport(year, month1)
   const busy = loading || syncing
 
   const [openedCell, setOpenedCell] = useState<OpenedCell | null>(null)
@@ -255,6 +259,22 @@ export function SimCalendarPage() {
           </table>
         </div>
       </div>
+
+      {!loading && users.length > 0 && (
+        <div className="mt-5 border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm p-5">
+          <MonthlyTotalsChart
+            days={days}
+            current={dayTotals}
+            previous={prevMonthDayTotals}
+            currentLabel={monthLabel}
+            previousLabel={
+              prevMonthMeta
+                ? `${MONTH_NAMES_NOM[prevMonthMeta.month - 1]} ${prevMonthMeta.year}`
+                : 'Прошлый месяц'
+            }
+          />
+        </div>
+      )}
 
       {openedCell && (
         <CellDealsModal

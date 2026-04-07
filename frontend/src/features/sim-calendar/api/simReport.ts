@@ -18,6 +18,9 @@ export interface SimReportPayload {
   month:   number
   users:   SimReportUser[]
   entries: SimReportEntry[]
+  dayTotals: Record<number, number>
+  prevMonthDayTotals: Record<number, number>
+  prevMonth: { year: number; month: number; daysInMonth: number }
 }
 
 export function fetchSimReport(year: number, month: number): Promise<SimReportPayload> {

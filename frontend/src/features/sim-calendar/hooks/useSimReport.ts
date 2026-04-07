@@ -12,6 +12,10 @@ export interface UseSimReportResult {
   reload:   () => Promise<void>
   /** Триггернуть sync с amoCRM, затем перечитать (медленнее, для кнопки "Обновить"). */
   refresh:  () => Promise<void>
+  /** Сырые агрегаты для графика. */
+  dayTotals:          Record<number, number>
+  prevMonthDayTotals: Record<number, number>
+  prevMonthMeta:      { year: number; month: number; daysInMonth: number } | null
 }
 
 export function useSimReport(year: number, month: number): UseSimReportResult {
@@ -75,5 +79,8 @@ export function useSimReport(year: number, month: number): UseSimReportResult {
     countFor,
     reload: load,
     refresh,
+    dayTotals:          data?.dayTotals          ?? {},
+    prevMonthDayTotals: data?.prevMonthDayTotals ?? {},
+    prevMonthMeta:      data?.prevMonth          ?? null,
   }
 }

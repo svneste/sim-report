@@ -28,6 +28,12 @@ export interface SimReportPayload {
   month:   number // 1..12
   users:   SimReportUser[]
   entries: SimReportEntry[]
+  /** Суммы по дням текущего месяца, индексация: day(1..N) → count */
+  dayTotals: Record<number, number>
+  /** Суммы по дням предыдущего месяца — для сравнительной линии на графике */
+  prevMonthDayTotals: Record<number, number>
+  /** Метаданные предыдущего месяца, чтобы фронт мог подписать ось */
+  prevMonth: { year: number; month: number; daysInMonth: number }
 }
 
 export interface SimReportDeal {
@@ -43,6 +49,38 @@ function monthRange(year: number, month: number): { from: string; to: string } {
   const last = new Date(year, month, 0).getDate()
   const to = `${year}-${String(month).padStart(2, '0')}-${String(last).padStart(2, '0')}`
   return { from, to }
+}
+
+/**
+ * Считает кол-во оформлений по дням за указанный месяц без разбивки по юзерам.
+ * Используется для построения графика (например, сравнение с прошлым месяцем).
+ */
+async function fetchDailyTotals(
+  year: number,
+  month: number,
+  excludedUserIds: number[],
+): Promise<Record<number, number>> {
+  const { from, to } = monthRange(year, month)
+  const dateFilter = between(simRegistrations.registeredOn, from, to)
+  const where = excludedUserIds.length
+    ? and(dateFilter, notInArray(simRegistrations.responsibleUserId, excludedUserIds))
+    : dateFilter
+
+  const rows = await db
+    .select({
+      date:  simRegistrations.registeredOn,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(simRegistrations)
+    .where(where)
+    .groupBy(simRegistrations.registeredOn)
+
+  const out: Record<number, number> = {}
+  for (const r of rows) {
+    const day = Number(String(r.date).slice(8, 10))
+    out[day] = (out[day] ?? 0) + Number(r.count)
+  }
+  return out
 }
 
 export const simReportService = {
@@ -85,7 +123,28 @@ export const simReportService = {
       .map(u => ({ id: u.id, name: u.name, email: u.email, avatar: u.avatarUrl }))
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
 
-    return { year, month, users, entries }
+    // Агрегаты по дням текущего месяца — берём прямо из entries, чтобы не делать ещё один запрос
+    const dayTotals: Record<number, number> = {}
+    for (const e of entries) {
+      const day = Number(e.date.slice(8, 10))
+      dayTotals[day] = (dayTotals[day] ?? 0) + e.count
+    }
+
+    // Агрегаты по дням предыдущего месяца — отдельный запрос, без разбивки по юзерам
+    const prevYear  = month === 1 ? year - 1 : year
+    const prevMonth = month === 1 ? 12 : month - 1
+    const prevDaysInMonth = new Date(prevYear, prevMonth, 0).getDate()
+    const prevMonthDayTotals = await fetchDailyTotals(prevYear, prevMonth, excluded)
+
+    return {
+      year,
+      month,
+      users,
+      entries,
+      dayTotals,
+      prevMonthDayTotals,
+      prevMonth: { year: prevYear, month: prevMonth, daysInMonth: prevDaysInMonth },
+    }
   },
 
   /**
