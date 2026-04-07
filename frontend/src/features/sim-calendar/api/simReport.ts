@@ -55,3 +55,13 @@ export interface SyncRunResult {
 export function runSync(hours = 6): Promise<SyncRunResult> {
   return http<SyncRunResult>(`/api/sync/run?hours=${hours}`, { method: 'POST' })
 }
+
+export interface MonthlyPoint {
+  year:  number
+  month: number
+  count: number
+}
+
+export function fetchMonthlyDynamics(months = 12): Promise<{ points: MonthlyPoint[] }> {
+  return http<{ points: MonthlyPoint[] }>(`/api/sim-report/monthly?months=${months}`)
+}

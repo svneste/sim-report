@@ -12,6 +12,10 @@ const dealsQuerySchema = z.object({
   date:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
 })
 
+const monthlyDynamicsQuerySchema = z.object({
+  months: z.coerce.number().int().min(1).max(60).default(12),
+})
+
 export const simReportRoutes: FastifyPluginAsync = async (app) => {
   app.get('/api/sim-report', async (req, reply) => {
     const parsed = querySchema.safeParse(req.query)
@@ -30,5 +34,15 @@ export const simReportRoutes: FastifyPluginAsync = async (app) => {
     }
     const deals = await simReportService.getDealsForCell(parsed.data.userId, parsed.data.date)
     return { deals }
+  })
+
+  app.get('/api/sim-report/monthly', async (req, reply) => {
+    const parsed = monthlyDynamicsQuerySchema.safeParse(req.query)
+    if (!parsed.success) {
+      reply.code(400)
+      return { error: 'invalid query', details: parsed.error.flatten() }
+    }
+    const points = await simReportService.getMonthlyDynamics(parsed.data.months)
+    return { points }
   })
 }

@@ -45,6 +45,12 @@ export interface SimReportDeal {
   url:         string
 }
 
+export interface SimReportMonthlyPoint {
+  year:  number
+  month: number // 1..12
+  count: number
+}
+
 function monthRange(year: number, month: number): { from: string; to: string } {
   const from = `${year}-${String(month).padStart(2, '0')}-01`
   // последний день месяца
@@ -137,6 +143,48 @@ export const simReportService = {
       prevMonthDayTotals,
       prevMonth: { year: prevYear, month: prevMonthN, daysInMonth: prevDaysInMonth },
     }
+  },
+
+  /**
+   * Возвращает суммы оформлений по месяцам за последние N месяцев (включая текущий).
+   * Используется для графика "Динамика по месяцам" — независим от того, какой
+   * месяц сейчас открыт в календаре.
+   */
+  async getMonthlyDynamics(monthsBack: number): Promise<SimReportMonthlyPoint[]> {
+    const excluded = config.reportExcludedUserIds
+
+    // Стартовая дата — первое число (today - monthsBack + 1)
+    const today = new Date()
+    const start = new Date(today.getFullYear(), today.getMonth() - (monthsBack - 1), 1)
+    const startIso = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-01`
+
+    const dateFilter = sql`${simRegistrations.registeredOn} >= ${startIso}`
+    const where = excluded.length
+      ? and(dateFilter, notInArray(simRegistrations.responsibleUserId, excluded))
+      : dateFilter
+
+    const rows = await db
+      .select({
+        ym:    sql<string>`to_char(${simRegistrations.registeredOn}, 'YYYY-MM')`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(simRegistrations)
+      .where(where)
+      .groupBy(sql`to_char(${simRegistrations.registeredOn}, 'YYYY-MM')`)
+
+    const map = new Map<string, number>()
+    for (const r of rows) map.set(String(r.ym), Number(r.count))
+
+    // Заполняем все месяцы подряд (даже пустые), чтобы фронт не строил «дырявый» график
+    const out: SimReportMonthlyPoint[] = []
+    for (let i = 0; i < monthsBack; i++) {
+      const d = new Date(start.getFullYear(), start.getMonth() + i, 1)
+      const y = d.getFullYear()
+      const m = d.getMonth() + 1
+      const key = `${y}-${String(m).padStart(2, '0')}`
+      out.push({ year: y, month: m, count: map.get(key) ?? 0 })
+    }
+    return out
   },
 
   /**

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useSimReport } from './hooks/useSimReport'
 import { CellDealsModal } from './CellDealsModal'
 import { MonthlyTotalsChart } from './MonthlyTotalsChart'
+import { MonthlyDynamicsChart } from './MonthlyDynamicsChart'
 import {
   DAY_NAMES_SHORT,
   MONTH_NAMES_NOM,
@@ -37,6 +38,9 @@ export function SimCalendarPage() {
   const busy = loading || syncing
 
   const [openedCell, setOpenedCell] = useState<OpenedCell | null>(null)
+  // Счётчик "перезагрузок" — увеличиваем при клике "Обновить", дочерние графики
+  // используют как зависимость useEffect, чтобы перетянуть свои данные.
+  const [reloadCounter, setReloadCounter] = useState(0)
 
   const days = useMemo(
     () => Array.from({ length: daysInMonth(year, month1) }, (_, i) => i + 1),
@@ -70,6 +74,11 @@ export function SimCalendarPage() {
   function prev() { setView(new Date(year, month0 - 1, 1)) }
   function next() { setView(new Date(year, month0 + 1, 1)) }
 
+  async function handleRefresh() {
+    await refresh()
+    setReloadCounter(c => c + 1)
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
@@ -89,7 +98,7 @@ export function SimCalendarPage() {
             className="w-8 h-8 flex items-center justify-center rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 disabled:opacity-40 transition-colors"
           >›</button>
           <button
-            onClick={() => void refresh()}
+            onClick={() => void handleRefresh()}
             disabled={busy}
             className="ml-2 px-3 h-8 rounded-lg border border-zinc-200 bg-white text-sm hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 disabled:opacity-40 transition-colors"
             title="Запросить актуальные данные из amoCRM"
@@ -275,6 +284,9 @@ export function SimCalendarPage() {
                   : 'Прошлый месяц'
               }
             />
+          </div>
+          <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm p-5">
+            <MonthlyDynamicsChart months={12} reloadKey={reloadCounter} />
           </div>
         </div>
       )}
