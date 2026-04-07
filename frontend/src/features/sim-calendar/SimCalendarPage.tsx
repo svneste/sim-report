@@ -261,18 +261,20 @@ export function SimCalendarPage() {
       </div>
 
       {!loading && users.length > 0 && (
-        <div className="mt-5 border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm p-5">
-          <MonthlyTotalsChart
-            days={days}
-            current={dayTotals}
-            previous={prevMonthDayTotals}
-            currentLabel={monthLabel}
-            previousLabel={
-              prevMonthMeta
-                ? `${MONTH_NAMES_NOM[prevMonthMeta.month - 1]} ${prevMonthMeta.year}`
-                : 'Прошлый месяц'
-            }
-          />
+        <div className="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm p-5">
+            <MonthlyTotalsChart
+              days={days}
+              current={dayTotals}
+              previous={prevMonthDayTotals}
+              currentLabel={monthLabel}
+              previousLabel={
+                prevMonthMeta
+                  ? `${MONTH_NAMES_NOM[prevMonthMeta.month - 1]} ${prevMonthMeta.year}`
+                  : 'Прошлый месяц'
+              }
+            />
+          </div>
         </div>
       )}
 
