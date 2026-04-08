@@ -328,15 +328,24 @@ export const simReportService = {
     // в pg-record и postgres ругается "cannot cast type record to bigint[]".
     const qualifiedIn = inArray(amocrmDeals.statusId, qualifiedIds)
     const successIn   = inArray(amocrmDeals.statusId, successIds)
-    // "Оформлены" — есть строка в sim_registrations (источник истины
-    // про заполненность поля даты регистрации сим-карты). LEFT JOIN
-    // и FILTER ... IS NOT NULL даёт нам нужный count без второго запроса.
+    const hasSimReg   = sql`${simRegistrations.dealId} IS NOT NULL`
+
+    // Воронка должна быть монотонной: Оформлены ⊆ Квал ⊆ Поступило.
+    // Если считать Квал только по текущему status_id, в неё не попадают
+    // сделки, которые когда-то были на "Клиент ответил"+, оформили sim
+    // и потом ушли в "Закрыто и не реализовано" (143). Поэтому в Квал
+    // дополнительно засчитываем всех, у кого есть запись в sim_registrations
+    // — раз sim уже зарегистрировали, клиент гарантированно был квалом.
+    //
+    // По той же причине Включено = success-статусы ИЛИ sim_registration
+    // У сделок в success полю даты регистрации sim чаще всего стоит,
+    // но иногда нет — без OR теряем строки.
     const rows = await db
       .select({
         ym,
         incoming:   sql<number>`count(*)::int`,
-        qualified:  sql<number>`count(*) FILTER (WHERE ${qualifiedIn})::int`,
-        registered: sql<number>`count(*) FILTER (WHERE ${simRegistrations.dealId} IS NOT NULL)::int`,
+        qualified:  sql<number>`count(*) FILTER (WHERE ${qualifiedIn} OR ${hasSimReg})::int`,
+        registered: sql<number>`count(*) FILTER (WHERE ${hasSimReg})::int`,
         activated:  sql<number>`count(*) FILTER (WHERE ${successIn})::int`,
       })
       .from(amocrmDeals)
