@@ -1,6 +1,6 @@
 import { and, asc, between, eq, inArray, notInArray, sql } from 'drizzle-orm'
 import { db } from '../../db/client.js'
-import { amocrmDeals, amocrmUsers, simRegistrations } from '../../db/schema.js'
+import { amocrmDeals, amocrmUsers, leadStatusTransitions, simRegistrations } from '../../db/schema.js'
 import { config } from '../../core/config.js'
 import { logger } from '../../core/logger.js'
 import { amocrm } from '../amocrm/client.js'
@@ -382,6 +382,90 @@ export const simReportService = {
 
     const total = entries.reduce((s, e) => s + e.count, 0)
     logger.info('successful-incoming-monthly', { year, month, rows: entries.length, total, statusIds: successStatusIds })
+
+    const userIds = Array.from(new Set(entries.map(e => e.userId).filter(id => id > 0)))
+    const usersData = userIds.length
+      ? await db.select().from(amocrmUsers).where(inArray(amocrmUsers.id, userIds))
+      : []
+
+    const users: SimReportUser[] = usersData
+      .map(u => ({ id: u.id, name: u.name, email: u.email, avatar: u.avatarUrl }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+
+    const prevDaysInMonth = new Date(prevYear, prevMonthN, 0).getDate()
+
+    return {
+      year,
+      month,
+      users,
+      entries,
+      prevEntries,
+      prevMonth: { year: prevYear, month: prevMonthN, daysInMonth: prevDaysInMonth },
+    }
+  },
+
+  /**
+   * Считает, сколько сделок в каждый день месяца перешло на стадию
+   * "Договор отправлен" / "Успешно реализовано" — это и есть фактическая
+   * дата включения номера. Источник данных — таблица lead_status_transitions,
+   * которую наполняет sync-модуль из amoCRM events API.
+   *
+   * Если для одной сделки за день есть несколько переходов на success
+   * (например, откатили и вернули), считаем по количеству уникальных
+   * сделок, а не по числу переходов — иначе суммы вырастут.
+   */
+  async getActivatedMonthly(year: number, month: number): Promise<IncomingDealsPayload> {
+    const successStatusIds = await getSuccessStatusIds()
+    if (!successStatusIds.length) {
+      const prevYear   = month === 1 ? year - 1 : year
+      const prevMonthN = month === 1 ? 12 : month - 1
+      return {
+        year, month, users: [], entries: [], prevEntries: [],
+        prevMonth: { year: prevYear, month: prevMonthN, daysInMonth: new Date(prevYear, prevMonthN, 0).getDate() },
+      }
+    }
+
+    const fetchByMonth = async (y: number, m: number): Promise<SimReportEntry[]> => {
+      const { from, to } = monthRange(y, m)
+      const mskDate = sql<string>`to_char(${leadStatusTransitions.occurredAt} AT TIME ZONE 'Europe/Moscow', 'YYYY-MM-DD')`
+
+      // Подзапрос: для каждой пары (deal_id, день МСК) берём первый
+      // переход на success-статус. Это даёт нам "момент включения номера",
+      // даже если потом сделку откатывали и снова вели на success.
+      const baseWhere = and(
+        eq(leadStatusTransitions.pipelineId, config.AMOCRM_PIPELINE_ID),
+        inArray(leadStatusTransitions.statusId, successStatusIds),
+        sql`(${leadStatusTransitions.occurredAt} AT TIME ZONE 'Europe/Moscow') >= ${from}::timestamp`,
+        sql`(${leadStatusTransitions.occurredAt} AT TIME ZONE 'Europe/Moscow') <  (${to}::date + interval '1 day')::timestamp`,
+      )
+
+      // distinct-по-сделке-в-день: count(distinct deal_id) на день
+      const rows = await db
+        .select({
+          // ответственный из основной таблицы сделок (чтобы попасть в users)
+          userId: sql<number>`coalesce(${amocrmDeals.responsibleUserId}, 0)::bigint`,
+          date:   mskDate,
+          count:  sql<number>`count(distinct ${leadStatusTransitions.dealId})::int`,
+        })
+        .from(leadStatusTransitions)
+        .leftJoin(amocrmDeals, eq(amocrmDeals.id, leadStatusTransitions.dealId))
+        .where(baseWhere)
+        .groupBy(sql`coalesce(${amocrmDeals.responsibleUserId}, 0)`, mskDate)
+
+      return rows.map(r => ({
+        userId: Number(r.userId),
+        date:   String(r.date),
+        count:  Number(r.count),
+      }))
+    }
+
+    const entries     = await fetchByMonth(year, month)
+    const prevYear    = month === 1 ? year - 1 : year
+    const prevMonthN  = month === 1 ? 12 : month - 1
+    const prevEntries = await fetchByMonth(prevYear, prevMonthN)
+
+    const total = entries.reduce((s, e) => s + e.count, 0)
+    logger.info('activated-monthly', { year, month, rows: entries.length, total })
 
     const userIds = Array.from(new Set(entries.map(e => e.userId).filter(id => id > 0)))
     const usersData = userIds.length

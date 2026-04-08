@@ -72,6 +72,31 @@ export const simRegistrations = pgTable('sim_registrations', {
   dateIdx:  index('sim_date_idx').on(t.registeredOn),
 }))
 
+/**
+ * История переходов сделок между этапами воронки. Append-only лог,
+ * заполняется из amoCRM events API (тип `lead_status_changed`).
+ *
+ * Зачем отдельно: в самой сделке amoCRM нет даты, когда она попала
+ * на конкретный этап, есть только текущий status_id. Чтобы построить
+ * график "сколько номеров включилось в день N", нам нужна дата
+ * перехода на стадию "Договор отправлен" / "Успешно реализовано".
+ *
+ * id — это event id из amoCRM (строка), он и есть PK, что даёт
+ * естественный апсёрт-by-id при повторном sync'е окна событий.
+ */
+export const leadStatusTransitions = pgTable('lead_status_transitions', {
+  id:         text('id').primaryKey(),
+  dealId:     bigint('deal_id',     { mode: 'number' }).notNull(),
+  statusId:   bigint('status_id',   { mode: 'number' }).notNull(),
+  pipelineId: bigint('pipeline_id', { mode: 'number' }).notNull(),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+  syncedAt:   timestamp('synced_at',   { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  statusOccurredIdx: index('lst_status_occurred_idx').on(t.statusId, t.occurredAt),
+  dealIdx:           index('lst_deal_idx').on(t.dealId),
+}))
+
 export type AmocrmUser     = typeof amocrmUsers.$inferSelect
 export type AmocrmDeal     = typeof amocrmDeals.$inferSelect
 export type SimRegistration = typeof simRegistrations.$inferSelect
+export type LeadStatusTransition = typeof leadStatusTransitions.$inferSelect

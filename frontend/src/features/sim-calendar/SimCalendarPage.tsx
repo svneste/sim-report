@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useSimReport } from './hooks/useSimReport'
-import { useIncomingDeals, useSuccessfulDeals } from './hooks/useIncomingDeals'
+import { useActivatedDeals, useIncomingDeals, useSuccessfulDeals } from './hooks/useIncomingDeals'
 import { CellDealsModal } from './CellDealsModal'
 import { MonthlyTotalsChart } from './MonthlyTotalsChart'
 import { MonthlyDynamicsChart } from './MonthlyDynamicsChart'
@@ -50,6 +50,9 @@ export function SimCalendarPage() {
   // Третий график — те же поступившие, но только дошедшие до стадий
   // "Договор отправлен" / "Успешно реализовано" (номер реально включён).
   const successful = useSuccessfulDeals(year, month1, reloadCounter)
+  // Четвёртый график — реальная дата включения номера (день перехода
+  // сделки на success-стадию по событиям amoCRM, а не дата создания заявки).
+  const activated  = useActivatedDeals(year, month1, reloadCounter)
 
   // Суммы поступивших по дням — нужны как база для % конверсии в тултипе
   // графика "включённые номера". Считаем тут, чтобы не дублировать
@@ -368,6 +371,31 @@ export function SimCalendarPage() {
                     prev:    incomingByDayPrev,
                     label:   'поступивших',
                   }}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Третий ряд: график "включения по дате перехода".
+              Считается по lead_status_transitions, а не по created_at сделки. */}
+          <div className="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm p-5">
+              {activated.error ? (
+                <div className="text-sm text-red-600 dark:text-red-400">{activated.error}</div>
+              ) : (
+                <MonthlyTotalsChart
+                  title="Динамика по дням (включения по дате перехода)"
+                  days={days}
+                  users={activated.users}
+                  entries={activated.entries}
+                  prevEntries={activated.prevEntries}
+                  currentLabel={monthLabel}
+                  previousLabel={
+                    activated.prevMonth
+                      ? `${MONTH_NAMES_NOM[activated.prevMonth.month - 1]} ${activated.prevMonth.year}`
+                      : 'Прошлый месяц'
+                  }
+                  showUserFilter={false}
                 />
               )}
             </div>

@@ -6,6 +6,7 @@ import { simReportRoutes } from './modules/sim-report/sim-report.routes.js'
 import { associationsReportRoutes } from './modules/associations-report/associations-report.routes.js'
 import { startSyncCron } from './modules/sync/sync.cron.js'
 import { syncService } from './modules/sync/sync.service.js'
+import { resetStatusEventsWatermark, syncStatusEvents } from './modules/sync/status-events.sync.js'
 import { usersRoutes } from './modules/users/users.routes.js'
 import { bitrix24UsersRoutes } from './modules/bitrix24-users/bitrix24-users.routes.js'
 import { bitrix24AuthHook } from './modules/bitrix24-auth/b24-auth.hook.js'
@@ -30,7 +31,22 @@ app.post('/api/sync/run', async (req) => {
     ? Math.floor(Date.now() / 1000) - Math.floor(hours * 3600)
     : undefined
   const res = await syncService.run(sinceSec)
+  // Догоняем историю переходов — нужна для графика "включения по дате
+  // перехода". Если вызов упал — sync основных данных не валим.
+  try {
+    await syncStatusEvents()
+  } catch (e) {
+    logger.error('status-events sync failed during /api/sync/run', e)
+  }
   return res
+})
+
+// Полный пересбор истории переходов за последние 90 дней.
+// Сбрасывает watermark и тащит все события заново. Дёргать руками,
+// если кажется, что в графике "включения" есть пробелы.
+app.post('/api/sync/status-events/backfill', async () => {
+  resetStatusEventsWatermark()
+  return await syncStatusEvents()
 })
 
 await app.register(simReportRoutes)

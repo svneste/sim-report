@@ -94,6 +94,17 @@ export function fetchSuccessfulDeals(year: number, month: number): Promise<Incom
   return http<IncomingDealsPayload>(`/api/sim-report/successful?year=${year}&month=${month}`)
 }
 
+/**
+ * Включения по фактической дате перехода сделки на success-стадию
+ * (берётся из таблицы lead_status_transitions, которую наполняет
+ * sync-модуль из amoCRM events API). Это ответ на вопрос "сколько
+ * номеров реально включили в день N", в отличие от fetchSuccessfulDeals,
+ * который группирует по дню поступления заявки.
+ */
+export function fetchActivatedDeals(year: number, month: number): Promise<IncomingDealsPayload> {
+  return http<IncomingDealsPayload>(`/api/sim-report/activated?year=${year}&month=${month}`)
+}
+
 export interface AvatarsFromBitrixResult {
   receivedB24Users: number
   matched:          number

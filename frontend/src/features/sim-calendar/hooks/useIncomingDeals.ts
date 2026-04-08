@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchIncomingDeals, fetchSuccessfulDeals, type IncomingDealsPayload } from '../api/simReport'
+import { fetchActivatedDeals, fetchIncomingDeals, fetchSuccessfulDeals, type IncomingDealsPayload } from '../api/simReport'
 
 type Fetcher = (year: number, month: number) => Promise<IncomingDealsPayload>
 
@@ -44,4 +44,8 @@ export function useIncomingDeals(year: number, month: number, reloadKey: number)
 
 export function useSuccessfulDeals(year: number, month: number, reloadKey: number) {
   return useDealsPayload(fetchSuccessfulDeals, year, month, reloadKey)
+}
+
+export function useActivatedDeals(year: number, month: number, reloadKey: number) {
+  return useDealsPayload(fetchActivatedDeals, year, month, reloadKey)
 }

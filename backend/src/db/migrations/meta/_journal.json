@@ -8,6 +8,13 @@
       "when": 1775555645856,
       "tag": "0000_perpetual_absorbing_man",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1775900000000,
+      "tag": "0001_lead_status_transitions",
+      "breakpoints": true
     }
   ]
 }
