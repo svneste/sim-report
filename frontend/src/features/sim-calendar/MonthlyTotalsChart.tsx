@@ -22,6 +22,12 @@ export interface MonthlyTotalsChartProps {
   prevEntries:  SimReportEntry[]
   currentLabel: string
   previousLabel: string
+  /**
+   * Показывать ли блок чипов с фильтром по сотрудникам под графиком.
+   * По умолчанию включён, выключаем для графика "поступившие заявки",
+   * где разрезание по конкретным юзерам не имеет смысла.
+   */
+  showUserFilter?: boolean
 }
 
 interface ChartRow {
@@ -64,6 +70,7 @@ export function MonthlyTotalsChart({
   prevEntries,
   currentLabel,
   previousLabel,
+  showUserFilter = true,
 }: MonthlyTotalsChartProps) {
   const { theme } = useTheme()
   const isDark = theme === 'dark'
@@ -220,6 +227,7 @@ export function MonthlyTotalsChart({
       </div>
 
       {/* Чипы с быстрым фильтром по сотрудникам */}
+      {showUserFilter && (
       <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800">
         <div className="flex items-center justify-between mb-2">
           <div className="text-[11px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 font-semibold">
@@ -279,6 +287,7 @@ export function MonthlyTotalsChart({
           })}
         </div>
       </div>
+      )}
     </div>
   )
 }

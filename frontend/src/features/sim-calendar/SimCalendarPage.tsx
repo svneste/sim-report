@@ -319,6 +319,7 @@ export function SimCalendarPage() {
                       ? `${MONTH_NAMES_NOM[incoming.prevMonth.month - 1]} ${incoming.prevMonth.year}`
                       : 'Прошлый месяц'
                   }
+                  showUserFilter={false}
                 />
               )}
             </div>
