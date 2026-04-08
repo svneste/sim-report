@@ -320,12 +320,18 @@ export const simReportService = {
     // Один запрос со всеми тремя метриками — count(*) для incoming,
     // FILTER (...) для qualified и activated. Это сильно дешевле трёх
     // отдельных раундтрипов в pg.
+    //
+    // Передаём id-шники как inArray (drizzle сгенерит "IN (1,2,3)") —
+    // прямой `${array}::bigint[]` нельзя, drizzle оборачивает массив
+    // в pg-record и postgres ругается "cannot cast type record to bigint[]".
+    const qualifiedIn = inArray(amocrmDeals.statusId, qualifiedIds)
+    const successIn   = inArray(amocrmDeals.statusId, successIds)
     const rows = await db
       .select({
         ym,
         incoming:  sql<number>`count(*)::int`,
-        qualified: sql<number>`count(*) FILTER (WHERE ${amocrmDeals.statusId} = ANY(${qualifiedIds}::bigint[]))::int`,
-        activated: sql<number>`count(*) FILTER (WHERE ${amocrmDeals.statusId} = ANY(${successIds}::bigint[]))::int`,
+        qualified: sql<number>`count(*) FILTER (WHERE ${qualifiedIn})::int`,
+        activated: sql<number>`count(*) FILTER (WHERE ${successIn})::int`,
       })
       .from(amocrmDeals)
       .where(baseWhere)
