@@ -51,6 +51,26 @@ export function SimCalendarPage() {
   // "Договор отправлен" / "Успешно реализовано" (номер реально включён).
   const successful = useSuccessfulDeals(year, month1, reloadCounter)
 
+  // Суммы поступивших по дням — нужны как база для % конверсии в тултипе
+  // графика "включённые номера". Считаем тут, чтобы не дублировать
+  // логику внутри чарта.
+  const incomingByDay = useMemo(() => {
+    const out: Record<number, number> = {}
+    for (const e of incoming.entries) {
+      const day = Number(e.date.slice(8, 10))
+      out[day] = (out[day] ?? 0) + e.count
+    }
+    return out
+  }, [incoming.entries])
+  const incomingByDayPrev = useMemo(() => {
+    const out: Record<number, number> = {}
+    for (const e of incoming.prevEntries) {
+      const day = Number(e.date.slice(8, 10))
+      out[day] = (out[day] ?? 0) + e.count
+    }
+    return out
+  }, [incoming.prevEntries])
+
   const days = useMemo(
     () => Array.from({ length: daysInMonth(year, month1) }, (_, i) => i + 1),
     [year, month1],
@@ -343,6 +363,11 @@ export function SimCalendarPage() {
                       : 'Прошлый месяц'
                   }
                   showUserFilter={false}
+                  conversionBase={{
+                    current: incomingByDay,
+                    prev:    incomingByDayPrev,
+                    label:   'поступивших',
+                  }}
                 />
               )}
             </div>

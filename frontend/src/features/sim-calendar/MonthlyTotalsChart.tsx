@@ -28,6 +28,18 @@ export interface MonthlyTotalsChartProps {
    * где разрезание по конкретным юзерам не имеет смысла.
    */
   showUserFilter?: boolean
+  /**
+   * Опциональная "база" для расчёта процента в тултипе. Если задана,
+   * для каждого дня показывается доп. строка вида "X% от поступивших".
+   * Используется на графике "включённые номера", чтобы видеть конверсию
+   * день-в-день, не сравнивая графики глазами.
+   */
+  conversionBase?: {
+    current: Record<number, number>
+    prev:    Record<number, number>
+    /** Текстовая подпись для % — например "поступивших" */
+    label:   string
+  }
 }
 
 interface ChartRow {
@@ -71,6 +83,7 @@ export function MonthlyTotalsChart({
   currentLabel,
   previousLabel,
   showUserFilter = true,
+  conversionBase,
 }: MonthlyTotalsChartProps) {
   const { theme } = useTheme()
   const isDark = theme === 'dark'
@@ -188,7 +201,23 @@ export function MonthlyTotalsChart({
               formatter={(value, _name, item) => {
                 const key = (item as { dataKey?: string })?.dataKey
                 const label = key === 'current' ? currentLabel : previousLabel
-                return [`${Number(value ?? 0)} шт.`, label]
+                const v = Number(value ?? 0)
+                let suffix = ''
+                if (conversionBase) {
+                  const day = (item as { payload?: { day?: number } })?.payload?.day
+                  if (typeof day === 'number') {
+                    const base = key === 'current'
+                      ? (conversionBase.current[day] ?? 0)
+                      : (conversionBase.prev[day]    ?? 0)
+                    if (base > 0) {
+                      const pct = Math.round((v / base) * 100)
+                      suffix = ` · ${pct}% от ${conversionBase.label} (${base})`
+                    } else if (v === 0) {
+                      // нет ни базы, ни значения — не зашумляем тултип
+                    }
+                  }
+                }
+                return [`${v} шт.${suffix}`, label]
               }}
             />
 
