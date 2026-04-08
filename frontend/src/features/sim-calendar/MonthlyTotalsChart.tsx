@@ -13,6 +13,8 @@ import { useTheme } from '../../shared/theme/useTheme'
 import type { SimReportEntry, SimReportUser } from './api/simReport'
 
 export interface MonthlyTotalsChartProps {
+  /** Заголовок над графиком */
+  title:        string
   /** Дни месяца, которые должны быть на оси X (1..N) */
   days: number[]
   users:        SimReportUser[]
@@ -55,6 +57,7 @@ function sumByDay(entries: SimReportEntry[], selected: Set<number>): Record<numb
  * тем же набором юзеров.
  */
 export function MonthlyTotalsChart({
+  title,
   days,
   users,
   entries,
@@ -113,7 +116,7 @@ export function MonthlyTotalsChart({
     <div className="w-full">
       <div className="flex items-center justify-between mb-3">
         <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-          Динамика по дням
+          {title}
         </div>
         <div className="flex items-center gap-4 text-[11px] text-zinc-500 dark:text-zinc-400">
           <div className="flex items-center gap-1.5">

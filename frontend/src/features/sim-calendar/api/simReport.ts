@@ -66,6 +66,24 @@ export function fetchMonthlyDynamics(months = 12): Promise<{ points: MonthlyPoin
   return http<{ points: MonthlyPoint[] }>(`/api/sim-report/monthly?months=${months}`)
 }
 
+export interface IncomingDealsPayload {
+  year:    number
+  month:   number
+  users:   SimReportUser[]
+  entries: SimReportEntry[]
+  prevEntries: SimReportEntry[]
+  prevMonth: { year: number; month: number; daysInMonth: number }
+}
+
+/**
+ * Считает все поступившие сделки воронки за указанный месяц
+ * (по amocrm_deals.created_at), без фильтра по факту регистрации сим-карты.
+ * Используется для второго графика "Динамика по дням (поступившие заявки)".
+ */
+export function fetchIncomingDeals(year: number, month: number): Promise<IncomingDealsPayload> {
+  return http<IncomingDealsPayload>(`/api/sim-report/incoming?year=${year}&month=${month}`)
+}
+
 export interface AvatarsFromBitrixResult {
   receivedB24Users: number
   matched:          number

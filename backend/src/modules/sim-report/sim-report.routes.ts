@@ -36,6 +36,15 @@ export const simReportRoutes: FastifyPluginAsync = async (app) => {
     return { deals }
   })
 
+  app.get('/api/sim-report/incoming', async (req, reply) => {
+    const parsed = querySchema.safeParse(req.query)
+    if (!parsed.success) {
+      reply.code(400)
+      return { error: 'invalid query', details: parsed.error.flatten() }
+    }
+    return simReportService.getIncomingMonthly(parsed.data.year, parsed.data.month)
+  })
+
   app.get('/api/sim-report/monthly', async (req, reply) => {
     const parsed = monthlyDynamicsQuerySchema.safeParse(req.query)
     if (!parsed.success) {

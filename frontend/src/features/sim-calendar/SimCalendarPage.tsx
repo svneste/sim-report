@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useSimReport } from './hooks/useSimReport'
+import { useIncomingDeals } from './hooks/useIncomingDeals'
 import { CellDealsModal } from './CellDealsModal'
 import { MonthlyTotalsChart } from './MonthlyTotalsChart'
 import { MonthlyDynamicsChart } from './MonthlyDynamicsChart'
@@ -41,6 +42,11 @@ export function SimCalendarPage() {
   // Счётчик "перезагрузок" — увеличиваем при клике "Обновить", дочерние графики
   // используют как зависимость useEffect, чтобы перетянуть свои данные.
   const [reloadCounter, setReloadCounter] = useState(0)
+
+  // Данные второго графика — поступившие заявки. Тащим отдельным запросом,
+  // потому что они считаются по amocrm_deals.created_at, а не по дате
+  // регистрации сим-карты, и в основной payload sim-report не входят.
+  const incoming = useIncomingDeals(year, month1, reloadCounter)
 
   const days = useMemo(
     () => Array.from({ length: daysInMonth(year, month1) }, (_, i) => i + 1),
@@ -270,25 +276,50 @@ export function SimCalendarPage() {
       </div>
 
       {!loading && users.length > 0 && (
-        <div className="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm p-5">
-            <MonthlyTotalsChart
-              days={days}
-              users={users}
-              entries={entries}
-              prevEntries={prevEntries}
-              currentLabel={monthLabel}
-              previousLabel={
-                prevMonthMeta
-                  ? `${MONTH_NAMES_NOM[prevMonthMeta.month - 1]} ${prevMonthMeta.year}`
-                  : 'Прошлый месяц'
-              }
-            />
+        <>
+          <div className="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm p-5">
+              <MonthlyTotalsChart
+                title="Динамика по дням (оформленные заявки)"
+                days={days}
+                users={users}
+                entries={entries}
+                prevEntries={prevEntries}
+                currentLabel={monthLabel}
+                previousLabel={
+                  prevMonthMeta
+                    ? `${MONTH_NAMES_NOM[prevMonthMeta.month - 1]} ${prevMonthMeta.year}`
+                    : 'Прошлый месяц'
+                }
+              />
+            </div>
+            <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm p-5">
+              <MonthlyDynamicsChart months={12} reloadKey={reloadCounter} />
+            </div>
           </div>
-          <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm p-5">
-            <MonthlyDynamicsChart months={12} reloadKey={reloadCounter} />
+
+          {/* Второй per-day график — все поступившие заявки. Под первой
+              парой графиков, на полную ширину, с такой же визуализацией. */}
+          <div className="mt-5 border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm p-5">
+            {incoming.error ? (
+              <div className="text-sm text-red-600 dark:text-red-400">{incoming.error}</div>
+            ) : (
+              <MonthlyTotalsChart
+                title="Динамика по дням (поступившие заявки)"
+                days={days}
+                users={incoming.users}
+                entries={incoming.entries}
+                prevEntries={incoming.prevEntries}
+                currentLabel={monthLabel}
+                previousLabel={
+                  incoming.prevMonth
+                    ? `${MONTH_NAMES_NOM[incoming.prevMonth.month - 1]} ${incoming.prevMonth.year}`
+                    : 'Прошлый месяц'
+                }
+              />
+            )}
           </div>
-        </div>
+        </>
       )}
 
       {openedCell && (

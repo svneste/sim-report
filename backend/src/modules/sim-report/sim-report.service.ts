@@ -51,6 +51,21 @@ export interface SimReportMonthlyPoint {
   count: number
 }
 
+/**
+ * Payload для графика "Поступившие заявки": считает все сделки воронки,
+ * созданные в указанный месяц, без фильтра по факту оформления сим-карты.
+ * Структура совпадает с SimReportPayload в той части, что нужна графику —
+ * это позволяет переиспользовать MonthlyTotalsChart на фронте.
+ */
+export interface IncomingDealsPayload {
+  year:    number
+  month:   number
+  users:   SimReportUser[]
+  entries: SimReportEntry[]
+  prevEntries: SimReportEntry[]
+  prevMonth: { year: number; month: number; daysInMonth: number }
+}
+
 function monthRange(year: number, month: number): { from: string; to: string } {
   const from = `${year}-${String(month).padStart(2, '0')}-01`
   // последний день месяца
@@ -182,6 +197,75 @@ export const simReportService = {
       out.push({ year: y, month: m, count: map.get(key) ?? 0 })
     }
     return out
+  },
+
+  /**
+   * Аналог getMonthly, но считает ВСЕ сделки воронки, попавшие в систему
+   * за месяц (по amocrm_deals.created_at), а не только те, у которых
+   * проставлено поле даты регистрации сим-карты.
+   *
+   * Используется для второго графика "Динамика по дням (поступившие заявки)".
+   */
+  async getIncomingMonthly(year: number, month: number): Promise<IncomingDealsPayload> {
+    const excluded = config.reportExcludedUserIds
+
+    const fetchByMonth = async (y: number, m: number): Promise<SimReportEntry[]> => {
+      const { from, to } = monthRange(y, m)
+      // created_at в БД — timestamptz, поэтому приводим к date в TZ сервера.
+      // Этого достаточно — sync-модуль уже кладёт его в UTC, а календарь
+      // работает в часовом поясе сервера.
+      const baseWhere = and(
+        eq(amocrmDeals.pipelineId, config.AMOCRM_PIPELINE_ID),
+        sql`${amocrmDeals.createdAt} >= ${from}::date`,
+        sql`${amocrmDeals.createdAt} <  (${to}::date + interval '1 day')`,
+      )
+      const where = excluded.length
+        ? and(baseWhere, notInArray(amocrmDeals.responsibleUserId, excluded))
+        : baseWhere
+
+      const rows = await db
+        .select({
+          userId: amocrmDeals.responsibleUserId,
+          date:   sql<string>`to_char(${amocrmDeals.createdAt}, 'YYYY-MM-DD')`,
+          count:  sql<number>`count(*)::int`,
+        })
+        .from(amocrmDeals)
+        .where(where)
+        .groupBy(amocrmDeals.responsibleUserId, sql`to_char(${amocrmDeals.createdAt}, 'YYYY-MM-DD')`)
+
+      return rows
+        .filter(r => r.userId != null)
+        .map(r => ({
+          userId: Number(r.userId),
+          date:   String(r.date),
+          count:  Number(r.count),
+        }))
+    }
+
+    const entries     = await fetchByMonth(year, month)
+    const prevYear    = month === 1 ? year - 1 : year
+    const prevMonthN  = month === 1 ? 12 : month - 1
+    const prevEntries = await fetchByMonth(prevYear, prevMonthN)
+
+    const userIds = Array.from(new Set(entries.map(e => e.userId)))
+    const usersData = userIds.length
+      ? await db.select().from(amocrmUsers).where(inArray(amocrmUsers.id, userIds))
+      : []
+
+    const users: SimReportUser[] = usersData
+      .map(u => ({ id: u.id, name: u.name, email: u.email, avatar: u.avatarUrl }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+
+    const prevDaysInMonth = new Date(prevYear, prevMonthN, 0).getDate()
+
+    return {
+      year,
+      month,
+      users,
+      entries,
+      prevEntries,
+      prevMonth: { year: prevYear, month: prevMonthN, daysInMonth: prevDaysInMonth },
+    }
   },
 
   /**
