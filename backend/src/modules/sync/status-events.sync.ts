@@ -46,8 +46,10 @@ export async function syncStatusEvents(): Promise<StatusEventsSyncResult> {
     fromSec, toSec, backfill: lastEventSyncAtSec == null,
   })
 
-  let scanned  = 0
-  let inserted = 0
+  let scanned         = 0
+  let inserted        = 0
+  let matchedPipeline = 0
+  let firstSampleLogged = false
   const buffer: typeof leadStatusTransitions.$inferInsert[] = []
 
   const flush = async () => {
@@ -68,12 +70,18 @@ export async function syncStatusEvents(): Promise<StatusEventsSyncResult> {
       break
     }
 
-    // Нас интересует только наша воронка. Бывает, что value_after массив
-    // или объект — приводим к массиву и берём первый элемент.
-    const after = Array.isArray(ev.value_after) ? ev.value_after[0] : ev.value_after
-    const newStatus = after?.lead_status
+    // Логируем первое событие в сыром виде — нужно один раз увидеть
+    // фактическую форму value_after от amoCRM, чтобы убедиться, что
+    // парсинг ниже совпадает с реальностью.
+    if (!firstSampleLogged) {
+      logger.info('status-events first raw event', JSON.stringify(ev))
+      firstSampleLogged = true
+    }
+
+    const newStatus = extractNewStatus(ev)
     if (!newStatus) continue
     if (newStatus.pipeline_id !== config.AMOCRM_PIPELINE_ID) continue
+    matchedPipeline++
 
     buffer.push({
       id:         String(ev.id),
@@ -89,8 +97,38 @@ export async function syncStatusEvents(): Promise<StatusEventsSyncResult> {
   await flush()
 
   lastEventSyncAtSec = toSec
-  logger.info('status-events sync finished', { scanned, inserted, fromSec, toSec })
+  logger.info('status-events sync finished', {
+    scanned, matchedPipeline, inserted, fromSec, toSec,
+    pipeline: config.AMOCRM_PIPELINE_ID,
+  })
   return { inserted, scanned, fromSec, toSec }
+}
+
+/**
+ * amoCRM events API в разных версиях возвращает value_after то массивом,
+ * то объектом, и сама нагрузка может лежать или в `lead_status`, или
+ * в `status` (без префикса). Перебираем все известные варианты, прежде
+ * чем сдаваться.
+ */
+function extractNewStatus(ev: unknown): { id: number; pipeline_id: number } | null {
+  const e = ev as { value_after?: unknown }
+  const va = e?.value_after
+  if (!va) return null
+  const list: unknown[] = Array.isArray(va) ? va : [va]
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue
+    const obj = item as Record<string, unknown>
+    const candidate =
+      (obj.lead_status as { id?: unknown; pipeline_id?: unknown } | undefined) ??
+      (obj.status      as { id?: unknown; pipeline_id?: unknown } | undefined)
+    if (!candidate) continue
+    const id = Number(candidate.id)
+    const pid = Number(candidate.pipeline_id)
+    if (Number.isFinite(id) && Number.isFinite(pid)) {
+      return { id, pipeline_id: pid }
+    }
+  }
+  return null
 }
 
 /**

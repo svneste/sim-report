@@ -10,6 +10,8 @@ import { resetStatusEventsWatermark, syncStatusEvents } from './modules/sync/sta
 import { usersRoutes } from './modules/users/users.routes.js'
 import { bitrix24UsersRoutes } from './modules/bitrix24-users/bitrix24-users.routes.js'
 import { bitrix24AuthHook } from './modules/bitrix24-auth/b24-auth.hook.js'
+import { sql } from 'drizzle-orm'
+import { db } from './db/client.js'
 
 const app = Fastify({ logger: false })
 
@@ -46,7 +48,31 @@ app.post('/api/sync/run', async (req) => {
 // если кажется, что в графике "включения" есть пробелы.
 app.post('/api/sync/status-events/backfill', async () => {
   resetStatusEventsWatermark()
-  return await syncStatusEvents()
+  const res = await syncStatusEvents()
+  // Заодно отдадим количество строк в таблице — удобно проверять из UI/curl
+  const count = await db.execute(sql`select count(*)::int as c from lead_status_transitions`)
+  const total = (count as unknown as { rows?: Array<{ c: number }> })?.rows?.[0]?.c
+              ?? (Array.isArray(count) ? (count[0] as { c: number })?.c : undefined)
+  return { ...res, totalRowsAfter: total ?? null }
+})
+
+// Лёгкая диагностика без рестарта sync'а — показывает текущее состояние таблицы:
+// сколько строк всего, разрез по статусам, последние occurred_at.
+app.get('/api/sync/status-events/debug', async () => {
+  const totalRes = await db.execute(sql`select count(*)::int as c from lead_status_transitions`)
+  const totalRows = (totalRes as unknown as { rows?: Array<{ c: number }> })?.rows?.[0]?.c
+                 ?? (Array.isArray(totalRes) ? (totalRes[0] as { c: number })?.c : 0)
+
+  const byStatusRes = await db.execute(sql`
+    select status_id, count(*)::int as c, max(occurred_at) as last_occurred
+    from lead_status_transitions
+    group by status_id
+    order by c desc
+  `)
+  const byStatus = (byStatusRes as unknown as { rows?: unknown[] })?.rows
+                ?? (Array.isArray(byStatusRes) ? (byStatusRes as unknown[]) : [])
+
+  return { totalRows, byStatus }
 })
 
 await app.register(simReportRoutes)
