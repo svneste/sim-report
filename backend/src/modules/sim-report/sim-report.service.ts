@@ -15,39 +15,80 @@ import { amocrm } from '../amocrm/client.js'
  */
 const SUCCESS_STATUS_NAMES = ['успешно реализовано', 'договор отправлен']
 const SYSTEM_WON_STATUS_ID = 142
+const SYSTEM_LOST_STATUS_ID = 143
+
+/**
+ * Имя стадии, начиная с которой клиент считается "квал" (целевым).
+ * Все статусы с sort >= sort этой стадии (плюс 142) попадают в группу.
+ */
+const QUALIFIED_FROM_STAGE_NAME = 'клиент ответил'
 
 function normalizeStatusName(s: string): string {
   return s.toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim()
 }
 
-interface StatusCache { ids: number[]; expiresAt: number }
-let successStatusCache: StatusCache | null = null
+export interface StatusGroups {
+  /** "Договор отправлен" + "Успешно реализовано" — номер включён */
+  successIds:   number[]
+  /** Все стадии от "Клиент ответил" вниз по воронке + 142 */
+  qualifiedIds: number[]
+}
+
+interface StatusGroupsCache { groups: StatusGroups; expiresAt: number }
+let statusGroupsCache: StatusGroupsCache | null = null
 const STATUS_CACHE_TTL_MS = 10 * 60 * 1000
 
 /**
- * Возвращает список status_id, которые означают "номер включён".
- * Кэширует на 10 минут — статусы воронки меняются редко, а дёргать
- * amoCRM на каждый рендер графика не нужно.
+ * Резолвит обе группы статусов одним обходом pipelineStatuses, кэширует
+ * на 10 минут. Все ошибки невалит — отчёт лучше показать частично, чем
+ * упасть, если amoCRM сейчас недоступен.
  */
-async function getSuccessStatusIds(): Promise<number[]> {
-  if (successStatusCache && successStatusCache.expiresAt > Date.now()) {
-    return successStatusCache.ids
+async function getStatusGroups(): Promise<StatusGroups> {
+  if (statusGroupsCache && statusGroupsCache.expiresAt > Date.now()) {
+    return statusGroupsCache.groups
   }
-  const ids = new Set<number>([SYSTEM_WON_STATUS_ID])
+  const successIds   = new Set<number>([SYSTEM_WON_STATUS_ID])
+  const qualifiedIds = new Set<number>([SYSTEM_WON_STATUS_ID])
+
   try {
     const statuses = await amocrm.pipelineStatuses(config.AMOCRM_PIPELINE_ID)
-    const wanted = new Set(SUCCESS_STATUS_NAMES.map(normalizeStatusName))
+    const wantedSuccess = new Set(SUCCESS_STATUS_NAMES.map(normalizeStatusName))
+
+    // Собираем success статусы по имени
     for (const s of statuses) {
-      if (wanted.has(normalizeStatusName(s.name))) ids.add(s.id)
+      if (wantedSuccess.has(normalizeStatusName(s.name))) successIds.add(s.id)
+    }
+
+    // Находим sort стадии "Клиент ответил"; берём все статусы с sort
+    // >= неё (исключая системную "потеря" 143)
+    const ko = statuses.find(s => normalizeStatusName(s.name) === QUALIFIED_FROM_STAGE_NAME)
+    if (ko) {
+      for (const s of statuses) {
+        if (s.id === SYSTEM_LOST_STATUS_ID) continue
+        if (s.sort >= ko.sort) qualifiedIds.add(s.id)
+      }
+    } else {
+      logger.warn('qualified anchor stage not found in pipeline', { name: QUALIFIED_FROM_STAGE_NAME })
     }
   } catch (e) {
-    // Если amoCRM недоступен — отвечаем хотя бы системным id, отчёт не валим
-    logger.warn('failed to fetch pipeline statuses for success filter', e)
+    logger.warn('failed to fetch pipeline statuses', e)
   }
-  const arr = [...ids]
-  successStatusCache = { ids: arr, expiresAt: Date.now() + STATUS_CACHE_TTL_MS }
-  logger.info('success status ids resolved', { ids: arr })
-  return arr
+
+  const groups: StatusGroups = {
+    successIds:   [...successIds],
+    qualifiedIds: [...qualifiedIds],
+  }
+  statusGroupsCache = { groups, expiresAt: Date.now() + STATUS_CACHE_TTL_MS }
+  logger.info('status groups resolved', groups)
+  return groups
+}
+
+/**
+ * Тонкая обёртка для совместимости — раньше пользовали отдельный
+ * getSuccessStatusIds, теперь он живёт внутри getStatusGroups.
+ */
+async function getSuccessStatusIds(): Promise<number[]> {
+  return (await getStatusGroups()).successIds
 }
 
 /**
@@ -56,6 +97,41 @@ async function getSuccessStatusIds(): Promise<number[]> {
  * Если у поля поменяется ID — меняем тут.
  */
 const ASSOCIATION_FIELD_ID = 539431
+
+/**
+ * ID custom-поля "MNP" (галка). Если в сделке проставлено — это
+ * перенос номера, иначе — новый номер.
+ */
+const MNP_FIELD_ID = 539425
+
+export type NumberType = 'all' | 'mnp' | 'new'
+
+/**
+ * SQL-условие для фильтрации сделок по типу номера. Возвращает либо
+ * фрагмент drizzle SQL, либо undefined для 'all' — чтобы вызывающий
+ * мог не оборачивать его в and(...).
+ *
+ * Логика:
+ *  - mnp: в raw.custom_fields_values есть запись с field_id=MNP_FIELD_ID,
+ *    у которой хотя бы один values[].value не false/0/'' (галка стоит).
+ *  - new: обратное условие — записи нет, или она пустая, или value=false.
+ */
+function mnpFilter(numberType: NumberType) {
+  if (numberType === 'all') return undefined
+
+  const hasMnpFlag = sql`
+    EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(${amocrmDeals.raw}->'custom_fields_values') AS cf
+      WHERE (cf->>'field_id')::bigint = ${MNP_FIELD_ID}
+      AND EXISTS (
+        SELECT 1 FROM jsonb_array_elements(cf->'values') AS v
+        WHERE COALESCE(v->>'value', '') NOT IN ('false', '0', '')
+      )
+    )
+  `
+  return numberType === 'mnp' ? hasMnpFlag : sql`NOT (${hasMnpFlag})`
+}
 
 export interface SimReportUser {
   id:     number
@@ -95,7 +171,12 @@ export interface SimReportDeal {
 export interface SimReportMonthlyPoint {
   year:  number
   month: number // 1..12
-  count: number
+  /** Все поступившие сделки за месяц (по deal.created_at в МСК) */
+  incoming:  number
+  /** Из них клиент дошёл до стадии "Клиент ответил" или дальше */
+  qualified: number
+  /** Из них номер реально включён (success-стадии) */
+  activated: number
 }
 
 /**
@@ -205,43 +286,69 @@ export const simReportService = {
   },
 
   /**
-   * Возвращает суммы оформлений по месяцам за последние N месяцев (включая текущий).
-   * Используется для графика "Динамика по месяцам" — независим от того, какой
-   * месяц сейчас открыт в календаре.
+   * Динамика по месяцам — funnel-вид: для каждого месяца показывает
+   * сколько заявок поступило, сколько из них дошло до квал-клиентов
+   * и сколько в итоге включилось.
+   *
+   * Группировка везде по deal.created_at в МСК, чтобы линии можно
+   * было сравнивать как воронку. Все три метрики идут из amocrm_deals
+   * по текущему status_id — это позволяет показать данные за все
+   * месяцы, даже за пределами 90-дневного бэкфилла lead_status_transitions.
+   *
+   * Минусы такого подхода: сделка, которая когда-то была "квал", но
+   * сейчас перешла в потерянную (143), не попадёт в "qualified". Для
+   * текущей воронки это допустимо.
    */
-  async getMonthlyDynamics(monthsBack: number): Promise<SimReportMonthlyPoint[]> {
-    const excluded = config.reportExcludedUserIds
+  async getMonthlyDynamics(monthsBack: number, numberType: NumberType = 'all'): Promise<SimReportMonthlyPoint[]> {
+    const groups = await getStatusGroups()
+    const successIds   = groups.successIds
+    const qualifiedIds = groups.qualifiedIds
 
-    // Стартовая дата — первое число (today - monthsBack + 1)
+    // Стартовая дата — первое число (today - monthsBack + 1) в МСК
     const today = new Date()
     const start = new Date(today.getFullYear(), today.getMonth() - (monthsBack - 1), 1)
     const startIso = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-01`
 
-    const dateFilter = sql`${simRegistrations.registeredOn} >= ${startIso}`
-    const where = excluded.length
-      ? and(dateFilter, notInArray(simRegistrations.responsibleUserId, excluded))
-      : dateFilter
+    const ym = sql<string>`to_char(${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow', 'YYYY-MM')`
+    const mnpWhere = mnpFilter(numberType)
+    const baseWhere = and(
+      eq(amocrmDeals.pipelineId, config.AMOCRM_PIPELINE_ID),
+      sql`(${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow') >= ${startIso}::timestamp`,
+      ...(mnpWhere ? [mnpWhere] : []),
+    )
 
+    // Один запрос со всеми тремя метриками — count(*) для incoming,
+    // FILTER (...) для qualified и activated. Это сильно дешевле трёх
+    // отдельных раундтрипов в pg.
     const rows = await db
       .select({
-        ym:    sql<string>`to_char(${simRegistrations.registeredOn}, 'YYYY-MM')`,
-        count: sql<number>`count(*)::int`,
+        ym,
+        incoming:  sql<number>`count(*)::int`,
+        qualified: sql<number>`count(*) FILTER (WHERE ${amocrmDeals.statusId} = ANY(${qualifiedIds}::bigint[]))::int`,
+        activated: sql<number>`count(*) FILTER (WHERE ${amocrmDeals.statusId} = ANY(${successIds}::bigint[]))::int`,
       })
-      .from(simRegistrations)
-      .where(where)
-      .groupBy(sql`to_char(${simRegistrations.registeredOn}, 'YYYY-MM')`)
+      .from(amocrmDeals)
+      .where(baseWhere)
+      .groupBy(ym)
 
-    const map = new Map<string, number>()
-    for (const r of rows) map.set(String(r.ym), Number(r.count))
+    const map = new Map<string, { incoming: number; qualified: number; activated: number }>()
+    for (const r of rows) {
+      map.set(String(r.ym), {
+        incoming:  Number(r.incoming),
+        qualified: Number(r.qualified),
+        activated: Number(r.activated),
+      })
+    }
 
-    // Заполняем все месяцы подряд (даже пустые), чтобы фронт не строил «дырявый» график
+    // Заполняем все месяцы подряд — даже пустые, чтобы линии шли непрерывно
     const out: SimReportMonthlyPoint[] = []
     for (let i = 0; i < monthsBack; i++) {
       const d = new Date(start.getFullYear(), start.getMonth() + i, 1)
       const y = d.getFullYear()
       const m = d.getMonth() + 1
       const key = `${y}-${String(m).padStart(2, '0')}`
-      out.push({ year: y, month: m, count: map.get(key) ?? 0 })
+      const v = map.get(key) ?? { incoming: 0, qualified: 0, activated: 0 }
+      out.push({ year: y, month: m, ...v })
     }
     return out
   },

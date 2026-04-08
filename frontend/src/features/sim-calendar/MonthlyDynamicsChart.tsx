@@ -3,13 +3,14 @@ import {
   Area,
   CartesianGrid,
   ComposedChart,
+  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
 import { useTheme } from '../../shared/theme/useTheme'
-import { fetchMonthlyDynamics, type MonthlyPoint } from './api/simReport'
+import { fetchMonthlyDynamics, type MonthlyPoint, type NumberType } from './api/simReport'
 import { MONTH_NAMES_NOM } from '../../shared/lib/date'
 
 const MONTH_NAMES_SHORT = [
@@ -22,7 +23,9 @@ interface ChartRow {
   label: string
   /** Полное "Апрель 2026" — для тултипа */
   fullLabel: string
-  count: number
+  incoming:  number
+  qualified: number
+  activated: number
 }
 
 export interface MonthlyDynamicsChartProps {
@@ -32,14 +35,26 @@ export interface MonthlyDynamicsChartProps {
   reloadKey?: number
 }
 
+const NUMBER_TYPE_OPTIONS: { value: NumberType; label: string }[] = [
+  { value: 'all', label: 'Все'   },
+  { value: 'mnp', label: 'MNP'   },
+  { value: 'new', label: 'Новые' },
+]
+
 /**
- * График динамики оформлений по месяцам — последние N месяцев,
- * независим от того, какой месяц открыт в календаре.
+ * График динамики по месяцам в виде воронки. Показывает три линии:
+ * "Поступило" → "Квал. клиенты" → "Включено", чтобы видеть, какая
+ * доля заявок реально доходит до включения номера.
+ *
+ * Сегментированный контрол сверху фильтрует по типу номера: Все / MNP /
+ * Новые. Тип определяется по custom-полю 539425 в карточке сделки —
+ * галочка стоит = MNP, нет = новый номер.
  */
 export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDynamicsChartProps) {
   const { theme } = useTheme()
   const isDark = theme === 'dark'
 
+  const [numberType, setNumberType] = useState<NumberType>('all')
   const [points, setPoints]   = useState<MonthlyPoint[] | null>(null)
   const [error,  setError]    = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -48,23 +63,27 @@ export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDyna
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetchMonthlyDynamics(months)
+    fetchMonthlyDynamics(months, numberType)
       .then(r => { if (!cancelled) setPoints(r.points) })
       .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [months, reloadKey])
+  }, [months, reloadKey, numberType])
 
   const data: ChartRow[] = useMemo(() => {
     if (!points) return []
     return points.map(p => ({
       label:     `${MONTH_NAMES_SHORT[p.month - 1]}'${String(p.year).slice(2)}`,
       fullLabel: `${MONTH_NAMES_NOM[p.month - 1]} ${p.year}`,
-      count:     p.count,
+      incoming:  p.incoming,
+      qualified: p.qualified,
+      activated: p.activated,
     }))
   }, [points])
 
-  const colorCurrent  = '#10b981'
+  const colorIncoming   = isDark ? '#71717a' : '#a1a1aa' // zinc — total/baseline
+  const colorQualified  = '#3b82f6' // blue — quality leads
+  const colorActivated  = '#10b981' // emerald — activated
   const colorAxis     = isDark ? '#52525b' : '#a1a1aa'
   const colorGrid     = isDark ? '#27272a' : '#e4e4e7'
   const colorTooltip  = isDark ? '#18181b' : '#ffffff'
@@ -76,8 +95,46 @@ export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDyna
         <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
           Динамика по месяцам
         </div>
-        <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-          Последние {months} мес.
+        <div className="flex items-center gap-3">
+          {/* Сегментированный контрол MNP / Новые / Все */}
+          <div className="flex bg-zinc-100 dark:bg-zinc-800 rounded-lg p-0.5">
+            {NUMBER_TYPE_OPTIONS.map(opt => {
+              const active = numberType === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setNumberType(opt.value)}
+                  className={`px-2.5 h-6 rounded-md text-[11px] font-medium transition-colors ${
+                    active
+                      ? 'bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 shadow-sm'
+                      : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+          <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+            Последние {months} мес.
+          </div>
+        </div>
+      </div>
+
+      {/* Лёгкая легенда — три цветных метки */}
+      <div className="flex items-center gap-4 mb-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: colorIncoming }} />
+          Поступило
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: colorQualified }} />
+          Квал. клиенты
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: colorActivated }} />
+          Включено
         </div>
       </div>
 
@@ -96,9 +153,9 @@ export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDyna
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={data} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
               <defs>
-                <linearGradient id="sim-monthly-gradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"   stopColor={colorCurrent} stopOpacity={0.28} />
-                  <stop offset="100%" stopColor={colorCurrent} stopOpacity={0} />
+                <linearGradient id="md-activated-gradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%"   stopColor={colorActivated} stopOpacity={0.28} />
+                  <stop offset="100%" stopColor={colorActivated} stopOpacity={0} />
                 </linearGradient>
               </defs>
 
@@ -139,21 +196,58 @@ export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDyna
                   const row = payload?.[0]?.payload as ChartRow | undefined
                   return row?.fullLabel ?? _label
                 }}
-                formatter={(value) => [`${Number(value ?? 0)} шт.`, 'Оформлений']}
+                formatter={(value, _name, item) => {
+                  const key = (item as { dataKey?: string })?.dataKey
+                  const v = Number(value ?? 0)
+                  const row = (item as { payload?: ChartRow })?.payload
+                  const base = row?.incoming ?? 0
+                  let label = 'Поступило'
+                  let suffix = ''
+                  if (key === 'qualified') {
+                    label = 'Квал. клиенты'
+                    if (base > 0) suffix = ` · ${Math.round((v / base) * 100)}%`
+                  } else if (key === 'activated') {
+                    label = 'Включено'
+                    if (base > 0) suffix = ` · ${Math.round((v / base) * 100)}%`
+                  }
+                  return [`${v} шт.${suffix}`, label]
+                }}
               />
 
+              {/* Поступило — серая базовая линия */}
+              <Line
+                type="monotone"
+                dataKey="incoming"
+                stroke={colorIncoming}
+                strokeWidth={1.5}
+                strokeDasharray="4 4"
+                dot={false}
+                activeDot={{ r: 4, stroke: isDark ? '#18181b' : '#fff', strokeWidth: 2, fill: colorIncoming }}
+                isAnimationActive={false}
+              />
+              {/* Квал клиенты — синяя сплошная */}
+              <Line
+                type="monotone"
+                dataKey="qualified"
+                stroke={colorQualified}
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 4, stroke: isDark ? '#18181b' : '#fff', strokeWidth: 2, fill: colorQualified }}
+                isAnimationActive={false}
+              />
+              {/* Включено — зелёная заливка как раньше */}
               <Area
                 type="monotone"
-                dataKey="count"
-                stroke={colorCurrent}
+                dataKey="activated"
+                stroke={colorActivated}
                 strokeWidth={2}
-                fill="url(#sim-monthly-gradient)"
-                dot={{ r: 3, fill: colorCurrent, stroke: colorCurrent }}
+                fill="url(#md-activated-gradient)"
+                dot={{ r: 3, fill: colorActivated, stroke: colorActivated }}
                 activeDot={{
                   r: 5,
                   stroke: isDark ? '#18181b' : '#ffffff',
                   strokeWidth: 2,
-                  fill: colorCurrent,
+                  fill: colorActivated,
                 }}
                 isAnimationActive={false}
               />
