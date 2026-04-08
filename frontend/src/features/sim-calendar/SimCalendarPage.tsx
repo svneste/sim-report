@@ -298,26 +298,30 @@ export function SimCalendarPage() {
             </div>
           </div>
 
-          {/* Второй per-day график — все поступившие заявки. Под первой
-              парой графиков, на полную ширину, с такой же визуализацией. */}
-          <div className="mt-5 border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm p-5">
-            {incoming.error ? (
-              <div className="text-sm text-red-600 dark:text-red-400">{incoming.error}</div>
-            ) : (
-              <MonthlyTotalsChart
-                title="Динамика по дням (поступившие заявки)"
-                days={days}
-                users={incoming.users}
-                entries={incoming.entries}
-                prevEntries={incoming.prevEntries}
-                currentLabel={monthLabel}
-                previousLabel={
-                  incoming.prevMonth
-                    ? `${MONTH_NAMES_NOM[incoming.prevMonth.month - 1]} ${incoming.prevMonth.year}`
-                    : 'Прошлый месяц'
-                }
-              />
-            )}
+          {/* Второй per-day график — все поступившие заявки. Кладём в такой
+              же 2-колоночный grid, чтобы по ширине совпадало с верхним
+              "Динамика по дням"; правый слот пока пустой — туда позже
+              можно будет повесить ещё один отчёт. */}
+          <div className="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm p-5">
+              {incoming.error ? (
+                <div className="text-sm text-red-600 dark:text-red-400">{incoming.error}</div>
+              ) : (
+                <MonthlyTotalsChart
+                  title="Динамика по дням (поступившие заявки)"
+                  days={days}
+                  users={incoming.users}
+                  entries={incoming.entries}
+                  prevEntries={incoming.prevEntries}
+                  currentLabel={monthLabel}
+                  previousLabel={
+                    incoming.prevMonth
+                      ? `${MONTH_NAMES_NOM[incoming.prevMonth.month - 1]} ${incoming.prevMonth.year}`
+                      : 'Прошлый месяц'
+                  }
+                />
+              )}
+            </div>
           </div>
         </>
       )}

@@ -2,6 +2,7 @@ import { and, asc, between, eq, inArray, notInArray, sql } from 'drizzle-orm'
 import { db } from '../../db/client.js'
 import { amocrmDeals, amocrmUsers, simRegistrations } from '../../db/schema.js'
 import { config } from '../../core/config.js'
+import { logger } from '../../core/logger.js'
 
 /**
  * ID custom-поля "Объединение" в amoCRM. Захардкожен здесь, потому что
@@ -201,45 +202,51 @@ export const simReportService = {
 
   /**
    * Аналог getMonthly, но считает ВСЕ сделки воронки, попавшие в систему
-   * за месяц (по amocrm_deals.created_at), а не только те, у которых
-   * проставлено поле даты регистрации сим-карты.
+   * за месяц, а не только те, у которых проставлено поле даты регистрации
+   * сим-карты.
    *
-   * Используется для второго графика "Динамика по дням (поступившие заявки)".
+   * Отличия от sim-report:
+   *  - не фильтруем REPORT_EXCLUDED_USER_IDS — для "поступивших"
+   *    управленческие юзеры тоже считаются;
+   *  - не выкидываем сделки без ответственного — только что заведённые
+   *    заявки часто ещё без owner'а, а они нам нужны;
+   *  - дату созданя группируем по часовому поясу Europe/Moscow, потому что
+   *    воронка работает в МСК — иначе заявки 21:00–23:59 МСК уезжают
+   *    в следующий UTC-день и портят суточные суммы.
    */
   async getIncomingMonthly(year: number, month: number): Promise<IncomingDealsPayload> {
-    const excluded = config.reportExcludedUserIds
-
     const fetchByMonth = async (y: number, m: number): Promise<SimReportEntry[]> => {
       const { from, to } = monthRange(y, m)
-      // created_at в БД — timestamptz, поэтому приводим к date в TZ сервера.
-      // Этого достаточно — sync-модуль уже кладёт его в UTC, а календарь
-      // работает в часовом поясе сервера.
+
+      // Дату созданя приводим к МСК и группируем по дню МСК.
+      // Сравнение диапазона тоже в МСК — `(created_at AT TIME ZONE 'Europe/Moscow')`
+      // даёт timestamp без TZ (wall clock МСК), который сравнивается
+      // с границами календарного дня.
+      const mskDate = sql<string>`to_char(${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow', 'YYYY-MM-DD')`
       const baseWhere = and(
         eq(amocrmDeals.pipelineId, config.AMOCRM_PIPELINE_ID),
-        sql`${amocrmDeals.createdAt} >= ${from}::date`,
-        sql`${amocrmDeals.createdAt} <  (${to}::date + interval '1 day')`,
+        sql`(${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow') >= ${from}::timestamp`,
+        sql`(${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow') <  (${to}::date + interval '1 day')::timestamp`,
       )
-      const where = excluded.length
-        ? and(baseWhere, notInArray(amocrmDeals.responsibleUserId, excluded))
-        : baseWhere
 
       const rows = await db
         .select({
-          userId: amocrmDeals.responsibleUserId,
-          date:   sql<string>`to_char(${amocrmDeals.createdAt}, 'YYYY-MM-DD')`,
+          // 0 — синтетический «без ответственного»; entries с таким userId
+          // суммируются в общую линию графика, но в чипах не появляются
+          // (в amocrm_users такого юзера нет).
+          userId: sql<number>`coalesce(${amocrmDeals.responsibleUserId}, 0)::bigint`,
+          date:   mskDate,
           count:  sql<number>`count(*)::int`,
         })
         .from(amocrmDeals)
-        .where(where)
-        .groupBy(amocrmDeals.responsibleUserId, sql`to_char(${amocrmDeals.createdAt}, 'YYYY-MM-DD')`)
+        .where(baseWhere)
+        .groupBy(sql`coalesce(${amocrmDeals.responsibleUserId}, 0)`, mskDate)
 
-      return rows
-        .filter(r => r.userId != null)
-        .map(r => ({
-          userId: Number(r.userId),
-          date:   String(r.date),
-          count:  Number(r.count),
-        }))
+      return rows.map(r => ({
+        userId: Number(r.userId),
+        date:   String(r.date),
+        count:  Number(r.count),
+      }))
     }
 
     const entries     = await fetchByMonth(year, month)
@@ -247,7 +254,12 @@ export const simReportService = {
     const prevMonthN  = month === 1 ? 12 : month - 1
     const prevEntries = await fetchByMonth(prevYear, prevMonthN)
 
-    const userIds = Array.from(new Set(entries.map(e => e.userId)))
+    const total = entries.reduce((s, e) => s + e.count, 0)
+    logger.info('incoming-monthly', { year, month, rows: entries.length, total })
+
+    // Подгружаем имена и аватарки для тех ответственных, что реально есть
+    // в списке (id=0 пропускаем — это синтетический «без ответственного»).
+    const userIds = Array.from(new Set(entries.map(e => e.userId).filter(id => id > 0)))
     const usersData = userIds.length
       ? await db.select().from(amocrmUsers).where(inArray(amocrmUsers.id, userIds))
       : []
