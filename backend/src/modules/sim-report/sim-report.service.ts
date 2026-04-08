@@ -119,13 +119,28 @@ export type NumberType = 'all' | 'mnp' | 'new'
 function mnpFilter(numberType: NumberType) {
   if (numberType === 'all') return undefined
 
+  // У некоторых сделок custom_fields_values вообще нет, или это jsonb
+  // scalar null вместо массива. jsonb_array_elements на чём-то, что не
+  // массив, падает с 22023 "cannot extract elements from a scalar" —
+  // и guard в WHERE не помогает, потому что FROM вычисляется раньше.
+  // Поэтому передаём аргумент через CASE, заменяя не-массив на '[]'.
+  const fields = sql`
+    CASE
+      WHEN jsonb_typeof(${amocrmDeals.raw}->'custom_fields_values') = 'array'
+        THEN ${amocrmDeals.raw}->'custom_fields_values'
+      ELSE '[]'::jsonb
+    END
+  `
   const hasMnpFlag = sql`
     EXISTS (
       SELECT 1
-      FROM jsonb_array_elements(${amocrmDeals.raw}->'custom_fields_values') AS cf
+      FROM jsonb_array_elements(${fields}) AS cf
       WHERE (cf->>'field_id')::bigint = ${MNP_FIELD_ID}
       AND EXISTS (
-        SELECT 1 FROM jsonb_array_elements(cf->'values') AS v
+        SELECT 1
+        FROM jsonb_array_elements(
+          CASE WHEN jsonb_typeof(cf->'values') = 'array' THEN cf->'values' ELSE '[]'::jsonb END
+        ) AS v
         WHERE COALESCE(v->>'value', '') NOT IN ('false', '0', '')
       )
     )
