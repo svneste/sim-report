@@ -59,11 +59,12 @@ export function runSync(hours = 6): Promise<SyncRunResult> {
 export type NumberType = 'all' | 'mnp' | 'new'
 
 export interface MonthlyPoint {
-  year:      number
-  month:     number
-  incoming:  number
-  qualified: number
-  activated: number
+  year:       number
+  month:      number
+  incoming:   number
+  qualified:  number
+  registered: number
+  activated:  number
 }
 
 export function fetchMonthlyDynamics(months = 12, numberType: NumberType = 'all'): Promise<{ points: MonthlyPoint[] }> {

@@ -22,10 +22,11 @@ interface ChartRow {
   /** Метка для оси X — "апр'26" */
   label: string
   /** Полное "Апрель 2026" — для тултипа */
-  fullLabel: string
-  incoming:  number
-  qualified: number
-  activated: number
+  fullLabel:  string
+  incoming:   number
+  qualified:  number
+  registered: number
+  activated:  number
 }
 
 export interface MonthlyDynamicsChartProps {
@@ -73,16 +74,18 @@ export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDyna
   const data: ChartRow[] = useMemo(() => {
     if (!points) return []
     return points.map(p => ({
-      label:     `${MONTH_NAMES_SHORT[p.month - 1]}'${String(p.year).slice(2)}`,
-      fullLabel: `${MONTH_NAMES_NOM[p.month - 1]} ${p.year}`,
-      incoming:  p.incoming,
-      qualified: p.qualified,
-      activated: p.activated,
+      label:      `${MONTH_NAMES_SHORT[p.month - 1]}'${String(p.year).slice(2)}`,
+      fullLabel:  `${MONTH_NAMES_NOM[p.month - 1]} ${p.year}`,
+      incoming:   p.incoming,
+      qualified:  p.qualified,
+      registered: p.registered,
+      activated:  p.activated,
     }))
   }, [points])
 
   const colorIncoming   = isDark ? '#71717a' : '#a1a1aa' // zinc — total/baseline
   const colorQualified  = '#3b82f6' // blue — quality leads
+  const colorRegistered = '#f59e0b' // amber — оформлено (sim-card date filled)
   const colorActivated  = '#10b981' // emerald — activated
   const colorAxis     = isDark ? '#52525b' : '#a1a1aa'
   const colorGrid     = isDark ? '#27272a' : '#e4e4e7'
@@ -122,7 +125,7 @@ export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDyna
         </div>
       </div>
 
-      {/* Лёгкая легенда — три цветных метки */}
+      {/* Лёгкая легенда — четыре цветных метки в порядке воронки */}
       <div className="flex items-center gap-4 mb-2 text-[11px] text-zinc-500 dark:text-zinc-400">
         <div className="flex items-center gap-1.5">
           <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: colorIncoming }} />
@@ -131,6 +134,10 @@ export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDyna
         <div className="flex items-center gap-1.5">
           <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: colorQualified }} />
           Квал. клиенты
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: colorRegistered }} />
+          Оформлены
         </div>
         <div className="flex items-center gap-1.5">
           <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: colorActivated }} />
@@ -206,6 +213,9 @@ export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDyna
                   if (key === 'qualified') {
                     label = 'Квал. клиенты'
                     if (base > 0) suffix = ` · ${Math.round((v / base) * 100)}%`
+                  } else if (key === 'registered') {
+                    label = 'Оформлены'
+                    if (base > 0) suffix = ` · ${Math.round((v / base) * 100)}%`
                   } else if (key === 'activated') {
                     label = 'Включено'
                     if (base > 0) suffix = ` · ${Math.round((v / base) * 100)}%`
@@ -214,7 +224,11 @@ export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDyna
                 }}
               />
 
-              {/* Поступило — серая базовая линия */}
+              {/*
+                Порядок <Line>/<Area> определяет порядок строк в тултипе recharts.
+                Хотим: Поступило → Квал. клиенты → Оформлены → Включено.
+              */}
+              {/* Поступило — серая пунктирная базовая линия */}
               <Line
                 type="monotone"
                 dataKey="incoming"
@@ -235,7 +249,17 @@ export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDyna
                 activeDot={{ r: 4, stroke: isDark ? '#18181b' : '#fff', strokeWidth: 2, fill: colorQualified }}
                 isAnimationActive={false}
               />
-              {/* Включено — зелёная заливка как раньше */}
+              {/* Оформлены — янтарная сплошная (sim-card дата заполнена) */}
+              <Line
+                type="monotone"
+                dataKey="registered"
+                stroke={colorRegistered}
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 4, stroke: isDark ? '#18181b' : '#fff', strokeWidth: 2, fill: colorRegistered }}
+                isAnimationActive={false}
+              />
+              {/* Включено — зелёная заливка */}
               <Area
                 type="monotone"
                 dataKey="activated"

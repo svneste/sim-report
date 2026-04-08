@@ -172,11 +172,13 @@ export interface SimReportMonthlyPoint {
   year:  number
   month: number // 1..12
   /** Все поступившие сделки за месяц (по deal.created_at в МСК) */
-  incoming:  number
+  incoming:   number
   /** Из них клиент дошёл до стадии "Клиент ответил" или дальше */
-  qualified: number
+  qualified:  number
+  /** Из них в карточке заполнена дата регистрации сим-карты */
+  registered: number
   /** Из них номер реально включён (success-стадии) */
-  activated: number
+  activated:  number
 }
 
 /**
@@ -326,23 +328,29 @@ export const simReportService = {
     // в pg-record и postgres ругается "cannot cast type record to bigint[]".
     const qualifiedIn = inArray(amocrmDeals.statusId, qualifiedIds)
     const successIn   = inArray(amocrmDeals.statusId, successIds)
+    // "Оформлены" — есть строка в sim_registrations (источник истины
+    // про заполненность поля даты регистрации сим-карты). LEFT JOIN
+    // и FILTER ... IS NOT NULL даёт нам нужный count без второго запроса.
     const rows = await db
       .select({
         ym,
-        incoming:  sql<number>`count(*)::int`,
-        qualified: sql<number>`count(*) FILTER (WHERE ${qualifiedIn})::int`,
-        activated: sql<number>`count(*) FILTER (WHERE ${successIn})::int`,
+        incoming:   sql<number>`count(*)::int`,
+        qualified:  sql<number>`count(*) FILTER (WHERE ${qualifiedIn})::int`,
+        registered: sql<number>`count(*) FILTER (WHERE ${simRegistrations.dealId} IS NOT NULL)::int`,
+        activated:  sql<number>`count(*) FILTER (WHERE ${successIn})::int`,
       })
       .from(amocrmDeals)
+      .leftJoin(simRegistrations, eq(simRegistrations.dealId, amocrmDeals.id))
       .where(baseWhere)
       .groupBy(ym)
 
-    const map = new Map<string, { incoming: number; qualified: number; activated: number }>()
+    const map = new Map<string, { incoming: number; qualified: number; registered: number; activated: number }>()
     for (const r of rows) {
       map.set(String(r.ym), {
-        incoming:  Number(r.incoming),
-        qualified: Number(r.qualified),
-        activated: Number(r.activated),
+        incoming:   Number(r.incoming),
+        qualified:  Number(r.qualified),
+        registered: Number(r.registered),
+        activated:  Number(r.activated),
       })
     }
 
@@ -353,7 +361,7 @@ export const simReportService = {
       const y = d.getFullYear()
       const m = d.getMonth() + 1
       const key = `${y}-${String(m).padStart(2, '0')}`
-      const v = map.get(key) ?? { incoming: 0, qualified: 0, activated: 0 }
+      const v = map.get(key) ?? { incoming: 0, qualified: 0, registered: 0, activated: 0 }
       out.push({ year: y, month: m, ...v })
     }
     return out
