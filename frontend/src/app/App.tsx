@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { SimCalendarPage } from '../features/sim-calendar/SimCalendarPage'
 import { AssociationsReportPage } from '../features/associations-report/AssociationsReportPage'
 import { ThemeToggle } from '../shared/theme/ThemeToggle'
+import { Bx24Guard } from './Bx24Guard'
 
 type Tab = 'sim' | 'associations'
 
@@ -26,6 +27,7 @@ export function App() {
   const [tab, setTab] = useState<Tab>('sim')
 
   return (
+    <Bx24Guard>
     <div className="min-h-full">
       {/* Top bar в стиле sass-сервиса: sticky, тонкая нижняя граница, минимум контраста */}
       <header className="sticky top-0 z-50 h-14 bg-white/95 dark:bg-zinc-950/95 backdrop-blur border-b border-zinc-200 dark:border-zinc-800">
@@ -73,5 +75,6 @@ export function App() {
         {tab === 'associations' && <AssociationsReportPage />}
       </main>
     </div>
+    </Bx24Guard>
   )
 }
