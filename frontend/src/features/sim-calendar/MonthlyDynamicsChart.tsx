@@ -203,23 +203,37 @@ export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDyna
                   const row = payload?.[0]?.payload as ChartRow | undefined
                   return row?.fullLabel ?? _label
                 }}
+                // recharts по умолчанию ставит Area-метрики первыми и не
+                // соблюдает JSX-порядок — сортируем явно по позиции в воронке.
+                itemSorter={(item) => {
+                  const order: Record<string, number> = {
+                    incoming:   0,
+                    qualified:  1,
+                    registered: 2,
+                    activated:  3,
+                  }
+                  return order[String(item.dataKey ?? '')] ?? 99
+                }}
                 formatter={(value, _name, item) => {
                   const key = (item as { dataKey?: string })?.dataKey
                   const v = Number(value ?? 0)
                   const row = (item as { payload?: ChartRow })?.payload
-                  const base = row?.incoming ?? 0
+                  // Каждая ступень воронки сравнивается с предыдущей,
+                  // а не с общим количеством — это лучше показывает,
+                  // где конверсия проседает на конкретном шаге.
                   let label = 'Поступило'
-                  let suffix = ''
+                  let base  = 0
                   if (key === 'qualified') {
                     label = 'Квал. клиенты'
-                    if (base > 0) suffix = ` · ${Math.round((v / base) * 100)}%`
+                    base  = row?.incoming ?? 0
                   } else if (key === 'registered') {
                     label = 'Оформлены'
-                    if (base > 0) suffix = ` · ${Math.round((v / base) * 100)}%`
+                    base  = row?.qualified ?? 0
                   } else if (key === 'activated') {
                     label = 'Включено'
-                    if (base > 0) suffix = ` · ${Math.round((v / base) * 100)}%`
+                    base  = row?.registered ?? 0
                   }
+                  const suffix = base > 0 ? ` · ${Math.round((v / base) * 100)}%` : ''
                   return [`${v} шт.${suffix}`, label]
                 }}
               />
