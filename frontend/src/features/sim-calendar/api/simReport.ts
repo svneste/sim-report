@@ -84,6 +84,16 @@ export function fetchIncomingDeals(year: number, month: number): Promise<Incomin
   return http<IncomingDealsPayload>(`/api/sim-report/incoming?year=${year}&month=${month}`)
 }
 
+/**
+ * Из тех же поступивших отдаёт только сделки, которые в итоге дошли до
+ * стадий "Договор отправлен" / "Успешно реализовано" — то есть номера,
+ * которые реально были включены. График сравнивает текущий месяц
+ * с предыдущим, как и остальные.
+ */
+export function fetchSuccessfulDeals(year: number, month: number): Promise<IncomingDealsPayload> {
+  return http<IncomingDealsPayload>(`/api/sim-report/successful?year=${year}&month=${month}`)
+}
+
 export interface AvatarsFromBitrixResult {
   receivedB24Users: number
   matched:          number

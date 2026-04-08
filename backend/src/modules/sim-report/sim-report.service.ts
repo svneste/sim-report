@@ -3,6 +3,52 @@ import { db } from '../../db/client.js'
 import { amocrmDeals, amocrmUsers, simRegistrations } from '../../db/schema.js'
 import { config } from '../../core/config.js'
 import { logger } from '../../core/logger.js'
+import { amocrm } from '../amocrm/client.js'
+
+/**
+ * Имена стадий воронки, которые считаются "номер включён".
+ * Сравнение по нормализованному имени (lowercase, ё→е, лишние пробелы),
+ * чтобы переименование с пробелами/регистром не ломало отчёт.
+ *
+ * 142 — системный статус "успешно реализовано", он есть в любой воронке
+ * и его ID не меняется. "Договор отправлен" — кастомный, ищем по имени.
+ */
+const SUCCESS_STATUS_NAMES = ['успешно реализовано', 'договор отправлен']
+const SYSTEM_WON_STATUS_ID = 142
+
+function normalizeStatusName(s: string): string {
+  return s.toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim()
+}
+
+interface StatusCache { ids: number[]; expiresAt: number }
+let successStatusCache: StatusCache | null = null
+const STATUS_CACHE_TTL_MS = 10 * 60 * 1000
+
+/**
+ * Возвращает список status_id, которые означают "номер включён".
+ * Кэширует на 10 минут — статусы воронки меняются редко, а дёргать
+ * amoCRM на каждый рендер графика не нужно.
+ */
+async function getSuccessStatusIds(): Promise<number[]> {
+  if (successStatusCache && successStatusCache.expiresAt > Date.now()) {
+    return successStatusCache.ids
+  }
+  const ids = new Set<number>([SYSTEM_WON_STATUS_ID])
+  try {
+    const statuses = await amocrm.pipelineStatuses(config.AMOCRM_PIPELINE_ID)
+    const wanted = new Set(SUCCESS_STATUS_NAMES.map(normalizeStatusName))
+    for (const s of statuses) {
+      if (wanted.has(normalizeStatusName(s.name))) ids.add(s.id)
+    }
+  } catch (e) {
+    // Если amoCRM недоступен — отвечаем хотя бы системным id, отчёт не валим
+    logger.warn('failed to fetch pipeline statuses for success filter', e)
+  }
+  const arr = [...ids]
+  successStatusCache = { ids: arr, expiresAt: Date.now() + STATUS_CACHE_TTL_MS }
+  logger.info('success status ids resolved', { ids: arr })
+  return arr
+}
 
 /**
  * ID custom-поля "Объединение" в amoCRM. Захардкожен здесь, потому что
@@ -259,6 +305,84 @@ export const simReportService = {
 
     // Подгружаем имена и аватарки для тех ответственных, что реально есть
     // в списке (id=0 пропускаем — это синтетический «без ответственного»).
+    const userIds = Array.from(new Set(entries.map(e => e.userId).filter(id => id > 0)))
+    const usersData = userIds.length
+      ? await db.select().from(amocrmUsers).where(inArray(amocrmUsers.id, userIds))
+      : []
+
+    const users: SimReportUser[] = usersData
+      .map(u => ({ id: u.id, name: u.name, email: u.email, avatar: u.avatarUrl }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+
+    const prevDaysInMonth = new Date(prevYear, prevMonthN, 0).getDate()
+
+    return {
+      year,
+      month,
+      users,
+      entries,
+      prevEntries,
+      prevMonth: { year: prevYear, month: prevMonthN, daysInMonth: prevDaysInMonth },
+    }
+  },
+
+  /**
+   * Из тех же поступивших сделок отдаём только те, что в итоге дошли
+   * до стадий "Договор отправлен" / "Успешно реализовано". Группировка
+   * по amocrm_deals.created_at, чтобы график "успешные" сравнивался
+   * с "поступившими" по одной и той же оси (день, когда заявка пришла).
+   *
+   * Замечание: смотрим только текущий status_id сделки. Если когда-нибудь
+   * сделку откатят из success в другой статус, мы её перестанем считать —
+   * для текущей воронки это допустимо, success-статусы там терминальные.
+   */
+  async getSuccessfulIncomingMonthly(year: number, month: number): Promise<IncomingDealsPayload> {
+    const successStatusIds = await getSuccessStatusIds()
+    if (!successStatusIds.length) {
+      // На всякий случай — пустой ответ, чтобы фронт не падал
+      const prevYear   = month === 1 ? year - 1 : year
+      const prevMonthN = month === 1 ? 12 : month - 1
+      return {
+        year, month, users: [], entries: [], prevEntries: [],
+        prevMonth: { year: prevYear, month: prevMonthN, daysInMonth: new Date(prevYear, prevMonthN, 0).getDate() },
+      }
+    }
+
+    const fetchByMonth = async (y: number, m: number): Promise<SimReportEntry[]> => {
+      const { from, to } = monthRange(y, m)
+      const mskDate = sql<string>`to_char(${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow', 'YYYY-MM-DD')`
+      const baseWhere = and(
+        eq(amocrmDeals.pipelineId, config.AMOCRM_PIPELINE_ID),
+        inArray(amocrmDeals.statusId, successStatusIds),
+        sql`(${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow') >= ${from}::timestamp`,
+        sql`(${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow') <  (${to}::date + interval '1 day')::timestamp`,
+      )
+
+      const rows = await db
+        .select({
+          userId: sql<number>`coalesce(${amocrmDeals.responsibleUserId}, 0)::bigint`,
+          date:   mskDate,
+          count:  sql<number>`count(*)::int`,
+        })
+        .from(amocrmDeals)
+        .where(baseWhere)
+        .groupBy(sql`coalesce(${amocrmDeals.responsibleUserId}, 0)`, mskDate)
+
+      return rows.map(r => ({
+        userId: Number(r.userId),
+        date:   String(r.date),
+        count:  Number(r.count),
+      }))
+    }
+
+    const entries     = await fetchByMonth(year, month)
+    const prevYear    = month === 1 ? year - 1 : year
+    const prevMonthN  = month === 1 ? 12 : month - 1
+    const prevEntries = await fetchByMonth(prevYear, prevMonthN)
+
+    const total = entries.reduce((s, e) => s + e.count, 0)
+    logger.info('successful-incoming-monthly', { year, month, rows: entries.length, total, statusIds: successStatusIds })
+
     const userIds = Array.from(new Set(entries.map(e => e.userId).filter(id => id > 0)))
     const usersData = userIds.length
       ? await db.select().from(amocrmUsers).where(inArray(amocrmUsers.id, userIds))

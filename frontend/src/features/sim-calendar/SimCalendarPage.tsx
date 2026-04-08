@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useSimReport } from './hooks/useSimReport'
-import { useIncomingDeals } from './hooks/useIncomingDeals'
+import { useIncomingDeals, useSuccessfulDeals } from './hooks/useIncomingDeals'
 import { CellDealsModal } from './CellDealsModal'
 import { MonthlyTotalsChart } from './MonthlyTotalsChart'
 import { MonthlyDynamicsChart } from './MonthlyDynamicsChart'
@@ -46,7 +46,10 @@ export function SimCalendarPage() {
   // Данные второго графика — поступившие заявки. Тащим отдельным запросом,
   // потому что они считаются по amocrm_deals.created_at, а не по дате
   // регистрации сим-карты, и в основной payload sim-report не входят.
-  const incoming = useIncomingDeals(year, month1, reloadCounter)
+  const incoming   = useIncomingDeals(year, month1, reloadCounter)
+  // Третий график — те же поступившие, но только дошедшие до стадий
+  // "Договор отправлен" / "Успешно реализовано" (номер реально включён).
+  const successful = useSuccessfulDeals(year, month1, reloadCounter)
 
   const days = useMemo(
     () => Array.from({ length: daysInMonth(year, month1) }, (_, i) => i + 1),
@@ -298,10 +301,10 @@ export function SimCalendarPage() {
             </div>
           </div>
 
-          {/* Второй per-day график — все поступившие заявки. Кладём в такой
-              же 2-колоночный grid, чтобы по ширине совпадало с верхним
-              "Динамика по дням"; правый слот пока пустой — туда позже
-              можно будет повесить ещё один отчёт. */}
+          {/* Вторая пара графиков: слева "поступившие" (все заявки воронки),
+              справа "успешные" (те же заявки, но только дошедшие до
+              "Договор отправлен" / "Успешно реализовано"). Сравнение по
+              одной оси — день поступления заявки. */}
           <div className="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm p-5">
               {incoming.error ? (
@@ -317,6 +320,26 @@ export function SimCalendarPage() {
                   previousLabel={
                     incoming.prevMonth
                       ? `${MONTH_NAMES_NOM[incoming.prevMonth.month - 1]} ${incoming.prevMonth.year}`
+                      : 'Прошлый месяц'
+                  }
+                  showUserFilter={false}
+                />
+              )}
+            </div>
+            <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm p-5">
+              {successful.error ? (
+                <div className="text-sm text-red-600 dark:text-red-400">{successful.error}</div>
+              ) : (
+                <MonthlyTotalsChart
+                  title="Динамика по дням (включённые номера)"
+                  days={days}
+                  users={successful.users}
+                  entries={successful.entries}
+                  prevEntries={successful.prevEntries}
+                  currentLabel={monthLabel}
+                  previousLabel={
+                    successful.prevMonth
+                      ? `${MONTH_NAMES_NOM[successful.prevMonth.month - 1]} ${successful.prevMonth.year}`
                       : 'Прошлый месяц'
                   }
                   showUserFilter={false}

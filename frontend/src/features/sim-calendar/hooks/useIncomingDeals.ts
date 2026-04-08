@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react'
-import { fetchIncomingDeals, type IncomingDealsPayload } from '../api/simReport'
+import { fetchIncomingDeals, fetchSuccessfulDeals, type IncomingDealsPayload } from '../api/simReport'
+
+type Fetcher = (year: number, month: number) => Promise<IncomingDealsPayload>
 
 /**
- * Тянет данные для второго графика — динамика поступивших заявок по дням.
+ * Базовый хук для графиков, отдающих IncomingDealsPayload-shape.
+ * Принимает fetcher, чтобы один и тот же стейт-менеджмент использовался
+ * для "поступивших" и "успешных" — отличается только URL ручки.
+ *
  * `reloadKey` инвалидирует запрос: при клике на "Обновить" в SimCalendarPage
  * родитель инкрементирует ключ и хук перетягивает свежие данные после
  * того, как amoCRM-sync уже отработал.
  */
-export function useIncomingDeals(year: number, month: number, reloadKey: number) {
+function useDealsPayload(fetcher: Fetcher, year: number, month: number, reloadKey: number) {
   const [data, setData]       = useState<IncomingDealsPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
@@ -16,12 +21,12 @@ export function useIncomingDeals(year: number, month: number, reloadKey: number)
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetchIncomingDeals(year, month)
+    fetcher(year, month)
       .then(p => { if (!cancelled) setData(p) })
       .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [year, month, reloadKey])
+  }, [fetcher, year, month, reloadKey])
 
   return {
     loading,
@@ -31,4 +36,12 @@ export function useIncomingDeals(year: number, month: number, reloadKey: number)
     prevEntries: data?.prevEntries ?? [],
     prevMonth:   data?.prevMonth   ?? null,
   }
+}
+
+export function useIncomingDeals(year: number, month: number, reloadKey: number) {
+  return useDealsPayload(fetchIncomingDeals, year, month, reloadKey)
+}
+
+export function useSuccessfulDeals(year: number, month: number, reloadKey: number) {
+  return useDealsPayload(fetchSuccessfulDeals, year, month, reloadKey)
 }
