@@ -47,6 +47,13 @@ interface B24Global {
   ) => void
   getAuth:    () => B24Auth | false
   refreshAuth?: (cb: (auth: B24Auth | false) => void) => void
+  /**
+   * Сообщает Bitrix24, что установка локального приложения завершена.
+   * Если этот метод никогда не позвать — у всех сотрудников, кроме
+   * установившего админа, портал будет показывать заглушку
+   * «приложение установлено не до конца».
+   */
+  installFinish?: () => void
 }
 
 declare global {
@@ -58,6 +65,14 @@ declare global {
 /**
  * Резолвится, когда BX24.init() отработал. Если BX24 не загрузился
  * за `timeoutMs` — резолвится в false (мы не в B24).
+ *
+ * Дополнительно: после init() сразу зовём BX24.installFinish() — это
+ * нужно, чтобы Bitrix24 пометил локальное приложение как «установленное
+ * до конца». Без этого вызова первый открывший приложение админ видит
+ * SPA нормально, но всем остальным сотрудникам портал показывает
+ * заглушку «приложение установлено не до конца». installFinish можно
+ * вызывать на каждом открытии — для уже установленных приложений это
+ * безопасный no-op.
  */
 function waitForBx24(timeoutMs = 1500): Promise<boolean> {
   return new Promise((resolve) => {
@@ -65,7 +80,14 @@ function waitForBx24(timeoutMs = 1500): Promise<boolean> {
     const tick = () => {
       if (window.BX24 && typeof window.BX24.init === 'function') {
         try {
-          window.BX24.init(() => resolve(true))
+          window.BX24.init(() => {
+            try {
+              window.BX24?.installFinish?.()
+            } catch {
+              // installFinish — fire-and-forget, ошибка тут не критична
+            }
+            resolve(true)
+          })
         } catch {
           resolve(false)
         }
