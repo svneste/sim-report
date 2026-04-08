@@ -19,6 +19,11 @@ const schema = z.object({
 
   SYNC_CRON: z.string().default('*/15 * * * *'),
 
+  // Домен портала Bitrix24, в iframe которого живёт SPA. Используется
+  // и как whitelist для CSP frame-ancestors в nginx, и как URL для
+  // верификации auth-token из BX24.js на бэке (см. b24-auth.hook).
+  BITRIX24_DOMAIN: z.string().default('melabs.bitrix24.ru'),
+
   // Список ID сотрудников amoCRM, которых нужно скрывать в отчётах (через запятую).
   // Например, руководители — у них могут быть оформления, но в календаре им не место.
   REPORT_EXCLUDED_USER_IDS: z.string().default(''),

@@ -28,6 +28,16 @@ interface B24CallResult {
   next:  () => Promise<B24CallResult> | null
 }
 
+interface B24Auth {
+  access_token:  string
+  refresh_token: string
+  domain:        string
+  member_id:     string
+  expires_in:    number
+  expires:       number
+  status:        string
+}
+
 interface B24Global {
   init:       (cb: () => void) => void
   callMethod: (
@@ -35,6 +45,8 @@ interface B24Global {
     params: Record<string, unknown>,
     cb:     (result: B24CallResult) => void,
   ) => void
+  getAuth:    () => B24Auth | false
+  refreshAuth?: (cb: (auth: B24Auth | false) => void) => void
 }
 
 declare global {
@@ -71,6 +83,27 @@ function waitForBx24(timeoutMs = 1500): Promise<boolean> {
 
 export async function isBitrix24Available(): Promise<boolean> {
   return waitForBx24()
+}
+
+/**
+ * Возвращает текущий access_token из BX24.js. BX24 сам кладёт его при
+ * init и сам рефрешит при истечении, так что вызов синхронный — мы
+ * просто читаем актуальное значение.
+ *
+ * Если SPA открыта вне B24 (BX24 не поднялся) — вернёт null, и http-клиент
+ * не добавит Authorization-заголовок (бэк ответит 401, что и нужно).
+ */
+export function getB24Token(): string | null {
+  if (typeof window === 'undefined' || !window.BX24) return null
+  try {
+    const auth = window.BX24.getAuth()
+    if (auth && typeof auth.access_token === 'string' && auth.access_token) {
+      return auth.access_token
+    }
+  } catch {
+    // ignore
+  }
+  return null
 }
 
 /**

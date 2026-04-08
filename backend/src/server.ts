@@ -8,10 +8,15 @@ import { startSyncCron } from './modules/sync/sync.cron.js'
 import { syncService } from './modules/sync/sync.service.js'
 import { usersRoutes } from './modules/users/users.routes.js'
 import { bitrix24UsersRoutes } from './modules/bitrix24-users/bitrix24-users.routes.js'
+import { bitrix24AuthHook } from './modules/bitrix24-auth/b24-auth.hook.js'
 
 const app = Fastify({ logger: false })
 
 await app.register(cors, { origin: config.CORS_ORIGIN === '*' ? true : config.CORS_ORIGIN.split(',') })
+
+// Жёсткая защита /api/* — только запросы с валидным BX24 access_token.
+// Хук сам пропускает /health и всё, что не /api/*.
+app.addHook('onRequest', bitrix24AuthHook)
 
 app.get('/health', async () => ({ ok: true }))
 
