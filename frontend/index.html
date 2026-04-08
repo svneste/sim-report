@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>МегаФон · Аналитика</title>
+    <!--
+      BX24.js — официальный JS-API Bitrix24. Работает только когда страница
+      открыта внутри iframe локального приложения B24: подхватывает токены
+      из POST-handshake и даёт BX24.callMethod('user.get', ...). Если SPA
+      открывают вне B24 (dev, прямой URL) — скрипт всё равно загрузится,
+      просто BX24.init() никогда не вызовет колбэк, и наш helper это поймёт.
+    -->
+    <script src="//api.bitrix24.com/api/v1/" defer></script>
     <script>
       // Применяем тему до маунта React, чтобы избежать вспышки светлой темы
       (function () {

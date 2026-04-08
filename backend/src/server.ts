@@ -7,6 +7,7 @@ import { associationsReportRoutes } from './modules/associations-report/associat
 import { startSyncCron } from './modules/sync/sync.cron.js'
 import { syncService } from './modules/sync/sync.service.js'
 import { usersRoutes } from './modules/users/users.routes.js'
+import { bitrix24UsersRoutes } from './modules/bitrix24-users/bitrix24-users.routes.js'
 
 const app = Fastify({ logger: false })
 
@@ -30,6 +31,7 @@ app.post('/api/sync/run', async (req) => {
 await app.register(simReportRoutes)
 await app.register(associationsReportRoutes)
 await app.register(usersRoutes)
+await app.register(bitrix24UsersRoutes)
 
 app.listen({ port: config.PORT, host: config.HOST })
   .then(() => {

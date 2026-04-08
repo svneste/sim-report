@@ -65,3 +65,23 @@ export interface MonthlyPoint {
 export function fetchMonthlyDynamics(months = 12): Promise<{ points: MonthlyPoint[] }> {
   return http<{ points: MonthlyPoint[] }>(`/api/sim-report/monthly?months=${months}`)
 }
+
+export interface AvatarsFromBitrixResult {
+  receivedB24Users: number
+  matched:          number
+  updated:          number
+  unmatchedAmocrm:  string[]
+}
+
+/**
+ * Шлёт сырых юзеров B24 (как их отдал BX24.callMethod('user.get'))
+ * на бэк, который сопоставит их с amocrm_users по ФИО и обновит avatar_url.
+ */
+export function pushBitrixAvatars(
+  users: Array<Record<string, unknown>>,
+): Promise<AvatarsFromBitrixResult> {
+  return http<AvatarsFromBitrixResult>('/api/users/avatars-from-bitrix', {
+    method: 'POST',
+    body:   JSON.stringify({ users }),
+  })
+}

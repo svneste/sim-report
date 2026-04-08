@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { fetchSimReport, runSync, type SimReportEntry, type SimReportPayload, type SimReportUser } from '../api/simReport'
+import { fetchSimReport, pushBitrixAvatars, runSync, type SimReportEntry, type SimReportPayload, type SimReportUser } from '../api/simReport'
+import { fetchB24Users, isBitrix24Available } from '../../../shared/bitrix24/bx24'
 
 export interface UseSimReportResult {
   loading:  boolean
@@ -43,17 +44,37 @@ export function useSimReport(year: number, month: number): UseSimReportResult {
   /**
    * Полный цикл: sync с amoCRM (инкрементальный, последние 6ч) → перечитать отчёт.
    * Используется кнопкой "Обновить", чтобы юзер видел актуальные данные.
+   *
+   * Дополнительно — если SPA открыта внутри iframe Bitrix24 (BX24.js доступен) —
+   * подтягиваем фотки сотрудников из B24 и сопоставляем их с amocrm_users по ФИО.
+   * Делаем это параллельно с amoCRM-sync, чтобы не удлинять Spinner.
+   * Ошибка в B24-ветке не должна валить основной refresh.
    */
   const refresh = useCallback(async () => {
     setSyncing(true)
     setError(null)
+
+    const amoSync = runSync(6)
+    const b24Sync = (async () => {
+      try {
+        if (!(await isBitrix24Available())) return
+        const users = await fetchB24Users()
+        if (!users.length) return
+        await pushBitrixAvatars(users as unknown as Array<Record<string, unknown>>)
+      } catch (e) {
+        // не критично — отчёт всё равно построится, просто без новых аватарок
+        console.warn('[sim-report] bitrix24 avatars sync failed', e)
+      }
+    })()
+
     try {
-      await runSync(6)
+      await amoSync
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setSyncing(false)
       return
     }
+    await b24Sync
     setSyncing(false)
     await load()
   }, [load])
