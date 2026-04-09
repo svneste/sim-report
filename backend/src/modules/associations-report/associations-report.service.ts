@@ -1,4 +1,4 @@
-import { eq, notInArray, sql } from 'drizzle-orm'
+import { and, eq, notInArray, sql } from 'drizzle-orm'
 import { db } from '../../db/client.js'
 import { amocrmDeals, simRegistrations } from '../../db/schema.js'
 import { config } from '../../core/config.js'
@@ -75,6 +75,23 @@ interface LifetimeAgg {
   days:   Set<string>
   /** Множество уникальных месяцев (YYYY-MM) — для расчёта ср/месяц */
   months: Set<string>
+}
+
+export interface AssociationYearlyRow {
+  association: string
+  /** Суммарное количество поступивших сделок за год */
+  total: number
+  /** Мапа month(1..12) → count */
+  counts: Record<number, number>
+}
+
+export interface AssociationsYearlyPayload {
+  year:       number
+  /** Все объединения, отсортированы по total desc */
+  rows:       AssociationYearlyRow[]
+  /** Итоги по месяцам — последняя строка "Итого" в таблице */
+  monthTotals: Record<number, number>
+  grandTotal: number
 }
 
 export const associationsReportService = {
@@ -197,5 +214,82 @@ export const associationsReportService = {
       hasMore,
       allOptions,
     }
+  },
+
+  /**
+   * Годовой срез: количество ПОСТУПИВШИХ сделок (по deal.created_at в МСК)
+   * по каждому объединению на каждый месяц года. Если объединение не
+   * появлялось за год — в ответ не попадает.
+   *
+   * Читает raw-payload сделок, как и месячный отчёт, чтобы вытянуть
+   * значение custom field 539431. Фильтр REPORT_EXCLUDED_USER_IDS
+   * применяется так же — для консистентности с месячным отчётом.
+   */
+  async getYearly(year: number): Promise<AssociationsYearlyPayload> {
+    const excluded = config.reportExcludedUserIds
+
+    // Границы года в МСК. amoCRM хранит created_at как unix-секунды,
+    // drizzle схема — timestamptz. Приводим к МСК так же, как в
+    // sim-report.getIncomingMonthly — иначе сделки 21:00-23:59 МСК
+    // 31 декабря уедут в следующий год.
+    const fromIso = `${year}-01-01`
+    const toIso   = `${year + 1}-01-01`
+
+    const mskMonth = sql<number>`extract(month from (${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow'))::int`
+
+    const baseWhere = and(
+      eq(amocrmDeals.pipelineId, config.AMOCRM_PIPELINE_ID),
+      sql`(${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow') >= ${fromIso}::timestamp`,
+      sql`(${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow') <  ${toIso}::timestamp`,
+    )
+
+    const where = excluded.length
+      ? and(baseWhere, notInArray(amocrmDeals.responsibleUserId, excluded))
+      : baseWhere
+
+    // Тянем сырые строки (raw-payload + номер месяца). Агрегацию по
+    // объединению делаем в коде — значение объединения лежит внутри
+    // jsonb, SQL-агрегация была бы громоздкой и без индекса медленной.
+    const rows = await db
+      .select({
+        month: mskMonth,
+        raw:   amocrmDeals.raw,
+      })
+      .from(amocrmDeals)
+      .where(where)
+
+    const byAssoc = new Map<string, { total: number; counts: Record<number, number> }>()
+    const monthTotals: Record<number, number> = {}
+    let grandTotal = 0
+
+    for (const r of rows) {
+      const assoc = extractAssociation(r.raw)
+      const m     = Number(r.month)
+      if (!Number.isFinite(m) || m < 1 || m > 12) continue
+
+      let agg = byAssoc.get(assoc)
+      if (!agg) {
+        agg = { total: 0, counts: {} }
+        byAssoc.set(assoc, agg)
+      }
+      agg.total += 1
+      agg.counts[m] = (agg.counts[m] ?? 0) + 1
+
+      monthTotals[m] = (monthTotals[m] ?? 0) + 1
+      grandTotal += 1
+    }
+
+    const out: AssociationYearlyRow[] = Array.from(byAssoc.entries()).map(([association, agg]) => ({
+      association,
+      total:  agg.total,
+      counts: agg.counts,
+    }))
+
+    out.sort((a, b) => {
+      if (b.total !== a.total) return b.total - a.total
+      return a.association.localeCompare(b.association, 'ru')
+    })
+
+    return { year, rows: out, monthTotals, grandTotal }
   },
 }

@@ -12,6 +12,10 @@ const querySchema = z.object({
   selected: z.string().optional(),
 })
 
+const yearlyQuerySchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100),
+})
+
 export const associationsReportRoutes: FastifyPluginAsync = async (app) => {
   app.get('/api/associations-report', async (req, reply) => {
     const parsed = querySchema.safeParse(req.query)
@@ -29,5 +33,14 @@ export const associationsReportRoutes: FastifyPluginAsync = async (app) => {
       parsed.data.offset,
       selected,
     )
+  })
+
+  app.get('/api/associations-report/yearly', async (req, reply) => {
+    const parsed = yearlyQuerySchema.safeParse(req.query)
+    if (!parsed.success) {
+      reply.code(400)
+      return { error: 'invalid query', details: parsed.error.flatten() }
+    }
+    return associationsReportService.getYearly(parsed.data.year)
   })
 }

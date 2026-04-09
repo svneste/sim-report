@@ -43,3 +43,20 @@ export function fetchAssociationsReport(
   }
   return http<AssociationsReportPayload>(`/api/associations-report?${params.toString()}`)
 }
+
+export interface AssociationYearlyRow {
+  association: string
+  total:       number
+  counts:      Record<number, number>
+}
+
+export interface AssociationsYearlyPayload {
+  year:        number
+  rows:        AssociationYearlyRow[]
+  monthTotals: Record<number, number>
+  grandTotal:  number
+}
+
+export function fetchAssociationsYearly(year: number): Promise<AssociationsYearlyPayload> {
+  return http<AssociationsYearlyPayload>(`/api/associations-report/yearly?year=${year}`)
+}

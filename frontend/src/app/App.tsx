@@ -1,30 +1,27 @@
 import { useState } from 'react'
 import { SimCalendarPage } from '../features/sim-calendar/SimCalendarPage'
 import { AssociationsReportPage } from '../features/associations-report/AssociationsReportPage'
+import { AssociationsYearPage } from '../features/associations-report/AssociationsYearPage'
 import { ThemeToggle } from '../shared/theme/ThemeToggle'
 import { Bx24Guard } from './Bx24Guard'
 
-type Tab = 'sim' | 'associations'
-
-interface TabDef {
-  id:    Tab
-  label: string
-}
-
-const TABS: TabDef[] = [
-  { id: 'sim',          label: 'Подключения сим-карт' },
-  { id: 'associations', label: 'Заявки по объединениям' },
-]
+type Tab = 'sim' | 'associations-day' | 'associations-year'
 
 /**
  * Корневой роутинг. Простые табы — без react-router, чтобы не тащить
- * лишнюю зависимость, пока разделов всего два.
+ * лишнюю зависимость, пока разделов всего несколько.
  *
- * TODO: когда появится разграничение прав, вкладку "Отчёт по заявкам"
+ * У "Заявки по объединениям" два под-отчёта, они прячутся в hover-меню
+ * чтобы не захламлять верхний бар.
+ *
+ * TODO: когда появится разграничение прав, вкладки со статистикой
  * нужно будет показывать только администраторам.
  */
 export function App() {
   const [tab, setTab] = useState<Tab>('sim')
+  const [assocOpen, setAssocOpen] = useState(false)
+
+  const assocActive = tab === 'associations-day' || tab === 'associations-year'
 
   return (
     <Bx24Guard>
@@ -45,24 +42,74 @@ export function App() {
 
             <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-800" />
 
-            <nav className="flex gap-0.5">
-              {TABS.map(t => {
-                const active = t.id === tab
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setTab(t.id)}
-                    className={`px-3 py-1.5 rounded-md text-sm transition-colors duration-100 ${
-                      active
-                        ? 'text-zinc-900 bg-zinc-100 dark:text-zinc-100 dark:bg-zinc-800'
-                        : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-100 dark:hover:bg-zinc-800'
-                    }`}
+            <nav className="flex gap-0.5 items-center">
+              {/* Подключения сим-карт — обычная вкладка */}
+              <button
+                type="button"
+                onClick={() => setTab('sim')}
+                className={`px-3 py-1.5 rounded-md text-sm transition-colors duration-100 ${
+                  tab === 'sim'
+                    ? 'text-zinc-900 bg-zinc-100 dark:text-zinc-100 dark:bg-zinc-800'
+                    : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-100 dark:hover:bg-zinc-800'
+                }`}
+              >
+                Подключения сим-карт
+              </button>
+
+              {/* Заявки по объединениям — hover-меню с двумя подпунктами */}
+              <div
+                className="relative"
+                onMouseEnter={() => setAssocOpen(true)}
+                onMouseLeave={() => setAssocOpen(false)}
+              >
+                <button
+                  type="button"
+                  onClick={() => setTab('associations-day')}
+                  className={`px-3 py-1.5 rounded-md text-sm transition-colors duration-100 flex items-center gap-1 ${
+                    assocActive
+                      ? 'text-zinc-900 bg-zinc-100 dark:text-zinc-100 dark:bg-zinc-800'
+                      : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  Заявки по объединениям
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" className="opacity-60">
+                    <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+
+                {assocOpen && (
+                  <div
+                    className="absolute left-0 top-full pt-1 min-w-[220px]"
+                    // Запас сверху (pt-1) — мост между кнопкой и меню, чтобы
+                    // курсор не попадал в "дырку" и меню не закрывалось.
                   >
-                    {t.label}
-                  </button>
-                )
-              })}
+                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-lg overflow-hidden py-1">
+                      <button
+                        type="button"
+                        onClick={() => { setTab('associations-day'); setAssocOpen(false) }}
+                        className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                          tab === 'associations-day'
+                            ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100'
+                            : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/60'
+                        }`}
+                      >
+                        Подключения по дням
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setTab('associations-year'); setAssocOpen(false) }}
+                        className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                          tab === 'associations-year'
+                            ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100'
+                            : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/60'
+                        }`}
+                      >
+                        Подключения по месяцам
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </nav>
           </div>
 
@@ -71,8 +118,9 @@ export function App() {
       </header>
 
       <main className="max-w-[1600px] mx-auto p-6">
-        {tab === 'sim'          && <SimCalendarPage />}
-        {tab === 'associations' && <AssociationsReportPage />}
+        {tab === 'sim'               && <SimCalendarPage />}
+        {tab === 'associations-day'  && <AssociationsReportPage />}
+        {tab === 'associations-year' && <AssociationsYearPage />}
       </main>
     </div>
     </Bx24Guard>
