@@ -64,6 +64,27 @@ export function AssociationsYearPage() {
     }
   }
 
+  // null = сортировка по годовому total; число = номер месяца, по которому сортируем
+  const [sortByMonth, setSortByMonth] = useState<number | null>(null)
+
+  const sortedRows = useMemo(() => {
+    if (!rows.length) return rows
+    return [...rows].sort((a, b) => {
+      if (sortByMonth != null) {
+        const ca = a.counts[sortByMonth] ?? 0
+        const cb = b.counts[sortByMonth] ?? 0
+        if (cb !== ca) return cb - ca
+      } else {
+        if (b.total !== a.total) return b.total - a.total
+      }
+      return a.association.localeCompare(b.association, 'ru')
+    })
+  }, [rows, sortByMonth])
+
+  function handleMonthClick(m: number) {
+    setSortByMonth(prev => prev === m ? null : m)
+  }
+
   const months = useMemo(() => Array.from({ length: 12 }, (_, i) => i + 1), [])
   const isCurrentMonth = (m: number) =>
     today.getFullYear() === year && today.getMonth() + 1 === m
@@ -115,26 +136,43 @@ export function AssociationsYearPage() {
                 >
                   Объединение
                 </th>
-                {months.map(m => (
-                  <th
-                    key={m}
-                    className={`border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-0 text-center`}
-                    style={{ width: 80, minWidth: 80 }}
-                  >
-                    <div className="flex flex-col items-center justify-center gap-0.5 py-1.5">
-                      <span className={`text-[11px] leading-none font-semibold uppercase tracking-wide ${
-                        isCurrentMonth(m)
-                          ? 'text-zinc-900 dark:text-zinc-100'
-                          : 'text-zinc-500 dark:text-zinc-400'
-                      }`}>{MONTH_SHORT[m - 1]}</span>
-                    </div>
-                  </th>
-                ))}
+                {months.map(m => {
+                  const isSorted = sortByMonth === m
+                  return (
+                    <th
+                      key={m}
+                      className={`border-b border-l border-zinc-200 dark:border-zinc-800 p-0 text-center cursor-pointer select-none transition-colors ${
+                        isSorted
+                          ? 'bg-emerald-50 dark:bg-emerald-950/40'
+                          : 'bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                      }`}
+                      style={{ width: 80, minWidth: 80 }}
+                      onClick={() => handleMonthClick(m)}
+                      title={isSorted ? 'Сбросить сортировку' : `Сортировать по ${MONTH_SHORT[m - 1]}`}
+                    >
+                      <div className="flex flex-col items-center justify-center gap-0.5 py-1.5">
+                        <span className={`text-[11px] leading-none font-semibold uppercase tracking-wide ${
+                          isSorted
+                            ? 'text-emerald-700 dark:text-emerald-300'
+                            : isCurrentMonth(m)
+                              ? 'text-zinc-900 dark:text-zinc-100'
+                              : 'text-zinc-500 dark:text-zinc-400'
+                        }`}>{MONTH_SHORT[m - 1]}{isSorted ? ' ▼' : ''}</span>
+                      </div>
+                    </th>
+                  )
+                })}
                 <th
-                  className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-center text-xs font-medium text-zinc-500 dark:text-zinc-400"
+                  className={`border-b border-l border-zinc-200 dark:border-zinc-800 text-center text-xs font-medium cursor-pointer select-none transition-colors ${
+                    sortByMonth == null
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-zinc-50 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
                   style={{ width: 80, minWidth: 80 }}
+                  onClick={() => setSortByMonth(null)}
+                  title="Сортировать по общему итогу"
                 >
-                  Итого
+                  Итого{sortByMonth == null ? ' ▼' : ''}
                 </th>
               </tr>
             </thead>
@@ -158,7 +196,7 @@ export function AssociationsYearPage() {
                 </tr>
               ))}
 
-              {!loading && rows.map(r => (
+              {!loading && sortedRows.map(r => (
                 <tr key={r.association} className="border-b border-zinc-200 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-800/40 group">
                   <td className="sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/40 border-r border-zinc-200 dark:border-zinc-800 px-4 transition-colors">
                     <div className="h-[36px] flex items-center text-[13px] text-zinc-900 dark:text-zinc-100 truncate" style={{ maxWidth: 240 }}>
@@ -167,8 +205,11 @@ export function AssociationsYearPage() {
                   </td>
                   {months.map(m => {
                     const c = r.counts[m] ?? 0
+                    const isSorted = sortByMonth === m
                     return (
-                      <td key={m} className="border-l border-zinc-200 dark:border-zinc-800 p-0">
+                      <td key={m} className={`border-l border-zinc-200 dark:border-zinc-800 p-0 ${
+                        isSorted ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : ''
+                      }`}>
                         <div className={`h-[36px] flex items-center justify-center text-[12px] font-semibold ${
                           c > 0
                             ? 'text-emerald-700 dark:text-emerald-300'
