@@ -226,26 +226,25 @@ export const associationsReportService = {
    * применяется так же — для консистентности с месячным отчётом.
    */
   async getYearly(year: number): Promise<AssociationsYearlyPayload> {
-    const excluded = config.reportExcludedUserIds
-
-    // Границы года в МСК. amoCRM хранит created_at как unix-секунды,
-    // drizzle схема — timestamptz. Приводим к МСК так же, как в
-    // sim-report.getIncomingMonthly — иначе сделки 21:00-23:59 МСК
-    // 31 декабря уедут в следующий год.
+    // Этот отчёт считает ПОСТУПИВШИЕ заявки (все, что пришли в систему),
+    // поэтому:
+    //  - НЕ фильтруем REPORT_EXCLUDED_USER_IDS — управленческие юзеры
+    //    тоже получают заявки, их нужно считать;
+    //  - НЕ фильтруем по responsible_user_id — свежие заявки часто
+    //    без ответственного, а SQL `NULL NOT IN (...)` отдаёт NULL и
+    //    postgres их молча выкидывает.
+    //
+    // Границы года в МСК — аналогично sim-report.getIncomingMonthly.
     const fromIso = `${year}-01-01`
     const toIso   = `${year + 1}-01-01`
 
     const mskMonth = sql<number>`extract(month from (${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow'))::int`
 
-    const baseWhere = and(
+    const where = and(
       eq(amocrmDeals.pipelineId, config.AMOCRM_PIPELINE_ID),
       sql`(${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow') >= ${fromIso}::timestamp`,
       sql`(${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow') <  ${toIso}::timestamp`,
     )
-
-    const where = excluded.length
-      ? and(baseWhere, notInArray(amocrmDeals.responsibleUserId, excluded))
-      : baseWhere
 
     // Тянем сырые строки (raw-payload + номер месяца). Агрегацию по
     // объединению делаем в коде — значение объединения лежит внутри
