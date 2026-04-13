@@ -76,36 +76,45 @@ function bx24() {
   return window.BX24!
 }
 
-/** Загружает ВСЕ элементы смарт-процесса 1032 с пагинацией (50 шт/запрос). */
-async function fetchAllItems(): Promise<B24Item[]> {
-  const all: B24Item[] = []
-
+/** Загружает одну страницу (до 50 элементов) с указанным offset. */
+function fetchPage(start: number): Promise<{ items: B24Item[]; total: number }> {
   return new Promise((resolve, reject) => {
-    const handle = (res: any) => {
-      const err = res.error()
-      if (err) { reject(new Error(`crm.item.list error: ${JSON.stringify(err)}`)); return }
-      const result = res.data()
-      const items = result?.items ?? result ?? []
-      if (Array.isArray(items)) all.push(...items)
-
-      const next = res.next()
-      if (next && typeof next.then === 'function') {
-        (next as Promise<any>).then(handle).catch(reject)
-      } else {
-        resolve(all)
-      }
-    }
-
     bx24().callMethod(
       'crm.item.list',
       {
         entityTypeId: ENTITY_TYPE_ID,
         select: ['id', 'title', F_AMOUNT, F_DATE, 'begindate', F_TYPE, F_CATEGORY],
         order: { id: 'ASC' },
+        start,
       },
-      handle,
+      (res: any) => {
+        const err = res.error()
+        if (err) { reject(new Error(`crm.item.list error: ${JSON.stringify(err)}`)); return }
+        const result = res.data()
+        const items = result?.items ?? result ?? []
+        const total = typeof res.total === 'function' ? (res.total() ?? 0) : 0
+        resolve({ items: Array.isArray(items) ? items : [], total })
+      },
     )
   })
+}
+
+/** Загружает ВСЕ элементы смарт-процесса 1032 с пагинацией (50 шт/запрос). */
+async function fetchAllItems(): Promise<B24Item[]> {
+  const first = await fetchPage(0)
+  const all = [...first.items]
+  const total = first.total
+
+  let start = 50
+  while (start < total) {
+    const page = await fetchPage(start)
+    all.push(...page.items)
+    if (page.items.length === 0) break
+    start += 50
+  }
+
+  console.log(`[finances] loaded ${all.length} / ${total} items`)
+  return all
 }
 
 /** Загружает определения полей — нужно для резолва enum-списков. */
