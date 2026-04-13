@@ -136,6 +136,23 @@ export function getB24Token(): string | null {
  *  - ACTIVE = true     — только активные сотрудники
  *  - USER_TYPE = employee — без extranet и интегрированных юзеров
  */
+/**
+ * Возвращает текущего пользователя B24 через user.current.
+ */
+export async function fetchCurrentB24User(): Promise<B24User | null> {
+  const ok = await waitForBx24()
+  if (!ok || !window.BX24) return null
+
+  return new Promise((resolve) => {
+    window.BX24!.callMethod('user.current', {}, (res) => {
+      const err = res.error()
+      if (err) { resolve(null); return }
+      const data = res.data() as B24User | null
+      resolve(data ?? null)
+    })
+  })
+}
+
 export async function fetchB24Users(): Promise<B24User[]> {
   const ok = await waitForBx24()
   if (!ok || !window.BX24) return []
