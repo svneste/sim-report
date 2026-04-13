@@ -61,8 +61,11 @@ export function Bx24Guard({ children }: { children: ReactNode }) {
     return (
       <div className="min-h-screen flex items-center justify-center px-6">
         <div className="max-w-md text-center">
-          <div className="mx-auto w-12 h-12 rounded-xl bg-zinc-900 dark:bg-zinc-100 flex items-center justify-center mb-5">
-            <span className="text-sm font-bold text-white dark:text-zinc-900 tracking-tight">МФ</span>
+          <div className="mx-auto w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center mb-5">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 3v18h18" />
+              <path d="M7 16l4-8 4 4 5-9" />
+            </svg>
           </div>
           <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
             Доступ только из Bitrix24
