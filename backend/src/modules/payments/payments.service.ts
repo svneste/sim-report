@@ -65,7 +65,7 @@ async function fetchB24Page(domain: string, token: string, start: number): Promi
     start: String(start),
   })
   // Multiple select[] params
-  const selectFields = ['id', 'title', F_AMOUNT, F_DATE, 'begindate', F_TYPE, F_CATEGORY, 'stageId']
+  const selectFields = ['id', 'title', F_AMOUNT, F_DATE, 'begindate', F_TYPE, F_CATEGORY, 'stageId', 'companyId']
   const selectStr = selectFields.map(f => `select[]=${encodeURIComponent(f)}`).join('&')
   const url = `https://${domain}/rest/crm.item.list?auth=${encodeURIComponent(token)}&entityTypeId=${ENTITY_TYPE_ID}&order[id]=ASC&start=${start}&${selectStr}`
 
@@ -109,6 +109,33 @@ async function fetchAllB24Items(domain: string, token: string): Promise<B24Item[
 
   logger.info(`[payments] fetched ${all.length} items from B24`)
   return all
+}
+
+/** Резолвит имена компаний по ID через crm.company.list. */
+async function fetchCompanyNames(domain: string, token: string, ids: number[]): Promise<Map<number, string>> {
+  const map = new Map<number, string>()
+  if (ids.length === 0) return map
+
+  // B24 REST API: crm.company.list с фильтром по ID, до 50 за запрос
+  const chunks: number[][] = []
+  for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50))
+
+  for (const chunk of chunks) {
+    const filterStr = chunk.map((id, i) => `filter[ID][${i}]=${id}`).join('&')
+    const url = `https://${domain}/rest/crm.company.list?auth=${encodeURIComponent(token)}&select[]=ID&select[]=TITLE&${filterStr}`
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(10_000) })
+      if (!res.ok) continue
+      const json = await res.json() as { result?: Array<{ ID: string; TITLE: string }> }
+      for (const c of json.result ?? []) {
+        map.set(Number(c.ID), c.TITLE)
+      }
+    } catch {
+      logger.warn('[payments] failed to fetch company chunk')
+    }
+  }
+
+  return map
 }
 
 // ===================== PARSING =====================
@@ -161,12 +188,21 @@ export const paymentsService = {
     }
     logger.info(`[payments] stages found:`, Object.fromEntries(stages))
 
+    // Резолвим названия компаний
+    const companyIds = [...new Set(
+      items.map(i => Number(i.companyId)).filter(id => id > 0)
+    )]
+    const companyNames = await fetchCompanyNames(domain, accessToken, companyIds)
+    logger.info(`[payments] resolved ${companyNames.size} company names`)
+
     let upserted = 0
     let skipped = 0
 
     for (const item of items) {
       const parsed = parseItem(item)
       if (!parsed) { skipped++; continue }
+
+      const companyName = companyNames.get(Number(item.companyId)) ?? null
 
       await db.insert(payments).values({
         id: parsed.id,
@@ -175,6 +211,7 @@ export const paymentsService = {
         category: parsed.category,
         paymentDate: parsed.paymentDate,
         title: parsed.title,
+        companyName,
         raw: item as object,
         syncedAt: new Date(),
       }).onConflictDoUpdate({
@@ -185,6 +222,7 @@ export const paymentsService = {
           category: sql`excluded.category`,
           paymentDate: sql`excluded.payment_date`,
           title: sql`excluded.title`,
+          companyName: sql`excluded.company_name`,
           raw: sql`excluded.raw`,
           syncedAt: sql`excluded.synced_at`,
         },
@@ -252,6 +290,7 @@ export const paymentsService = {
         amount: payments.amount,
         paymentDate: payments.paymentDate,
         category: payments.category,
+        companyName: payments.companyName,
       })
       .from(payments)
       .where(and(
@@ -267,6 +306,7 @@ export const paymentsService = {
       title: r.title,
       amount: r.amount,
       date: r.paymentDate,
+      companyName: r.companyName,
       url: `https://${config.BITRIX24_DOMAIN}/page/dokumentooborot/platezhi/type/1032/details/${r.id}/`,
     }))
   },

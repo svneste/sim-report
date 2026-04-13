@@ -70,11 +70,12 @@ export async function fetchFinancesData(year: number): Promise<FinancesData> {
 // ===================== ДЕТАЛИ ЯЧЕЙКИ =====================
 
 export interface PaymentItem {
-  id:     number
-  title:  string | null
-  amount: number
-  date:   string
-  url:    string
+  id:          number
+  title:       string | null
+  amount:      number
+  date:        string
+  companyName: string | null
+  url:         string
 }
 
 /** Загружает список платежей для конкретной ячейки таблицы. */

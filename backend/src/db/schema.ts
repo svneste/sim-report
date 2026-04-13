@@ -106,8 +106,9 @@ export const payments = pgTable('payments', {
   type:      text('type').notNull(),           // 'income' | 'expense'
   category:  text('category').notNull(),
   paymentDate: date('payment_date').notNull(),
-  title:     text('title'),
-  raw:       jsonb('raw').notNull(),
+  title:       text('title'),
+  companyName: text('company_name'),
+  raw:         jsonb('raw').notNull(),
   syncedAt:  timestamp('synced_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   typeIdx: index('payments_type_idx').on(t.type),

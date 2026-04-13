@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS "payments" (
 	"category" text NOT NULL,
 	"payment_date" date NOT NULL,
 	"title" text,
+	"company_name" text,
 	"raw" jsonb NOT NULL,
 	"synced_at" timestamp with time zone DEFAULT now() NOT NULL
 );

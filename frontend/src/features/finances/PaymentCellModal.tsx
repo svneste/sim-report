@@ -114,6 +114,9 @@ export function PaymentCellModal({ category, type, year, month, onClose }: Payme
                       </span>
                     </div>
                     <div className="mt-0.5 flex items-center gap-2 text-[11px] text-zinc-400 dark:text-zinc-500">
+                      {p.companyName && (
+                        <span className="text-zinc-500 dark:text-zinc-400">{p.companyName}</span>
+                      )}
                       <span>{p.date}</span>
                       <span>#{p.id} &#x2197;</span>
                     </div>
