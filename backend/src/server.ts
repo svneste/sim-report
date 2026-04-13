@@ -9,6 +9,7 @@ import { syncService } from './modules/sync/sync.service.js'
 import { resetStatusEventsWatermark, syncStatusEvents } from './modules/sync/status-events.sync.js'
 import { usersRoutes } from './modules/users/users.routes.js'
 import { bitrix24UsersRoutes } from './modules/bitrix24-users/bitrix24-users.routes.js'
+import { paymentsRoutes } from './modules/payments/payments.routes.js'
 import { bitrix24AuthHook } from './modules/bitrix24-auth/b24-auth.hook.js'
 import { sql } from 'drizzle-orm'
 import { db } from './db/client.js'
@@ -79,6 +80,7 @@ await app.register(simReportRoutes)
 await app.register(associationsReportRoutes)
 await app.register(usersRoutes)
 await app.register(bitrix24UsersRoutes)
+await app.register(paymentsRoutes)
 
 app.listen({ port: config.PORT, host: config.HOST })
   .then(() => {

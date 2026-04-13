@@ -96,6 +96,24 @@ export const leadStatusTransitions = pgTable('lead_status_transitions', {
   dealIdx:           index('lst_deal_idx').on(t.dealId),
 }))
 
+/**
+ * Платежи из смарт-процесса Bitrix24 (entityTypeId 1032).
+ * Синхронизируются через POST /api/payments/sync.
+ */
+export const payments = pgTable('payments', {
+  id:        bigint('id', { mode: 'number' }).primaryKey(),
+  amount:    integer('amount').notNull(),
+  type:      text('type').notNull(),           // 'income' | 'expense'
+  category:  text('category').notNull(),
+  paymentDate: date('payment_date').notNull(),
+  title:     text('title'),
+  raw:       jsonb('raw').notNull(),
+  syncedAt:  timestamp('synced_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  typeIdx: index('payments_type_idx').on(t.type),
+  dateIdx: index('payments_date_idx').on(t.paymentDate),
+}))
+
 export type AmocrmUser     = typeof amocrmUsers.$inferSelect
 export type AmocrmDeal     = typeof amocrmDeals.$inferSelect
 export type SimRegistration = typeof simRegistrations.$inferSelect

@@ -15,6 +15,13 @@
       "when": 1775900000000,
       "tag": "0001_lead_status_transitions",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776092000000,
+      "tag": "0002_payments",
+      "breakpoints": true
     }
   ]
 }

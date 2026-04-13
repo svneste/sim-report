@@ -248,22 +248,24 @@ interface FinancesReportProps {
   title: string
   data: FinancesData | null
   loading: boolean
+  syncing: boolean
   error: string | null
   year: number
   onYearChange: (y: number) => void
-  onReload: () => void
+  onSync: () => void
 }
 
 export function FinancesReport({
   title,
   data,
   loading,
+  syncing,
   error,
   year,
   onYearChange,
-  onReload,
+  onSync,
 }: FinancesReportProps) {
-  const busy = loading
+  const busy = loading || syncing
 
   return (
     <div>
@@ -284,11 +286,11 @@ export function FinancesReport({
             className="w-8 h-8 flex items-center justify-center rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 disabled:opacity-40 transition-colors"
           >{'\u203A'}</button>
           <button
-            onClick={onReload}
+            onClick={onSync}
             disabled={busy}
             className="ml-2 px-3 h-8 rounded-lg border border-zinc-200 bg-white text-sm hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 disabled:opacity-40 transition-colors"
           >
-            {busy ? 'Загрузка\u2026' : 'Обновить'}
+            {syncing ? 'Синхронизация\u2026' : loading ? 'Загрузка\u2026' : 'Обновить'}
           </button>
         </div>
       </div>
