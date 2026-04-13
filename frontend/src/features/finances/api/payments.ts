@@ -19,17 +19,14 @@ const ENTITY_TYPE_ID = 1032
 /** Поле с суммой (стандартное CRM-поле) */
 const F_AMOUNT = 'opportunity'
 
-/** Поле с датой платежа */
-const F_DATE = 'begindate'
+/** Поле с датой проведённой оплаты */
+const F_DATE = 'ufCrm19_1730893567094'
 
-/**
- * Кастомное поле — тип: «Доход» / «Затраты».
- * Если это список (enumeration), значения резолвятся автоматически.
- */
-const F_TYPE = 'ufCrm17_1234567890'
+/** Тип платежа: enum 939=«Доход», 941=«Затраты» */
+const F_TYPE = 'ufCrm19_1730893551691'
 
-/** Кастомное поле — категория: «Лицензии», «Консалтинг», … */
-const F_CATEGORY = 'ufCrm17_1234567891'
+/** Статья платежа (категория) */
+const F_CATEGORY = 'ufCrm19_1730893691'
 
 /** Текстовые значения типа */
 const V_INCOME  = 'Доход'
@@ -40,10 +37,9 @@ const V_EXPENSE = 'Затраты'
  * Всё остальное считается CRM-направлением.
  */
 export const MEGAFON_CATEGORIES = new Set<string>([
-  // TODO: вписать реальные названия, например:
-  // 'Подключение МегаФон',
-  // 'SIM МегаФон',
-  // 'Абонентское обслуживание',
+  'МегаФон 1-01072015/АСМ',
+  'МегаФон 1-01.05.2018/АС/B2B',
+  'МегаФон б/н 01.08.2025',
 ])
 
 // ===================== ТИПЫ =====================
@@ -104,8 +100,8 @@ async function fetchAllItems(): Promise<B24Item[]> {
       'crm.item.list',
       {
         entityTypeId: ENTITY_TYPE_ID,
-        select: ['id', 'title', F_AMOUNT, F_DATE, F_TYPE, F_CATEGORY],
-        order: { [F_DATE]: 'ASC' },
+        select: ['id', 'title', F_AMOUNT, F_DATE, 'begindate', F_TYPE, F_CATEGORY],
+        order: { id: 'ASC' },
       },
       handle,
     )
