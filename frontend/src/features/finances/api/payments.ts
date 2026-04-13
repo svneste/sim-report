@@ -294,44 +294,4 @@ export function filterFinancesData(
   }
 }
 
-// ===================== DISCOVERY (для настройки) =====================
-
-/**
- * Вызовите window.__discoverPaymentFields() в консоли браузера,
- * чтобы увидеть все поля смарт-процесса и пример данных.
- */
-if (typeof window !== 'undefined') {
-  ;(window as any).__discoverPaymentFields = async () => {
-    console.log('Загрузка полей смарт-процесса', ENTITY_TYPE_ID, '...')
-
-    const fields = await fetchFieldDefs()
-    console.group('📋 Поля смарт-процесса')
-    for (const [name, def] of Object.entries(fields)) {
-      const d = def as any
-      console.log(
-        `${name}  —  ${d.title ?? ''}  [${d.type}]`,
-        d.items ? `(enum: ${d.items.map((i: any) => `${i.ID}=${i.VALUE}`).join(', ')})` : '',
-      )
-    }
-    console.groupEnd()
-
-    console.log('\nЗагрузка первых 5 элементов...')
-    const items = await new Promise<any[]>((resolve, reject) => {
-      bx24().callMethod(
-        'crm.item.list',
-        { entityTypeId: ENTITY_TYPE_ID, select: ['*'], order: { id: 'DESC' }, filter: {} },
-        (res: any) => {
-          const err = res.error()
-          if (err) { reject(err); return }
-          const data = res.data()
-          resolve((data?.items ?? data ?? []).slice(0, 5))
-        },
-      )
-    })
-    console.group('📄 Примеры элементов')
-    items.forEach((item, i) => { console.log(`#${i + 1}`, item) })
-    console.groupEnd()
-
-    console.log('\n✅ Скопируйте нужные имена полей в payments.ts (константы F_TYPE, F_CATEGORY и т.д.)')
-  }
-}
+// Discovery-функция перенесена в bx24.ts — вызов: window.__discoverFields(1032)

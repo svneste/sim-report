@@ -153,6 +153,60 @@ export async function fetchCurrentB24User(): Promise<B24User | null> {
   })
 }
 
+/**
+ * Выводит в консоль все поля смарт-процесса и примеры элементов.
+ * Использование: window.__discoverFields(1032) в консоли браузера.
+ */
+async function discoverSmartProcessFields(entityTypeId: number) {
+  const ok = await waitForBx24()
+  if (!ok || !window.BX24) { console.error('BX24 не доступен'); return }
+
+  console.log(`Загрузка полей смарт-процесса ${entityTypeId}...`)
+
+  const fields = await new Promise<any>((resolve, reject) => {
+    window.BX24!.callMethod('crm.item.fields', { entityTypeId }, (res: any) => {
+      const err = res.error()
+      if (err) { reject(err); return }
+      const d = res.data()
+      resolve(d?.fields ?? d ?? {})
+    })
+  })
+
+  console.group('Поля смарт-процесса')
+  for (const [name, def] of Object.entries(fields as Record<string, any>)) {
+    const d = def as any
+    const enumInfo = d.items
+      ? ` (enum: ${d.items.map((i: any) => `${i.ID}="${i.VALUE}"`).join(', ')})`
+      : ''
+    console.log(`${name}  —  ${d.title ?? ''}  [${d.type}]${enumInfo}`)
+  }
+  console.groupEnd()
+
+  console.log('\nЗагрузка последних 5 элементов...')
+  const items = await new Promise<any[]>((resolve, reject) => {
+    window.BX24!.callMethod(
+      'crm.item.list',
+      { entityTypeId, select: ['*'], order: { id: 'DESC' } },
+      (res: any) => {
+        const err = res.error()
+        if (err) { reject(err); return }
+        const d = res.data()
+        resolve((d?.items ?? d ?? []).slice(0, 5))
+      },
+    )
+  })
+
+  console.group('Примеры элементов')
+  items.forEach((item, i) => console.log(`#${i + 1}`, item))
+  console.groupEnd()
+
+  console.log('\nСкопируйте нужные UF-имена полей в payments.ts')
+}
+
+if (typeof window !== 'undefined') {
+  ;(window as any).__discoverFields = discoverSmartProcessFields
+}
+
 export async function fetchB24Users(): Promise<B24User[]> {
   const ok = await waitForBx24()
   if (!ok || !window.BX24) return []
