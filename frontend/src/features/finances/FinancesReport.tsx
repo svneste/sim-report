@@ -15,29 +15,107 @@ const fmtCurrency = (v: number) =>
 
 // ===================== KPI-карточки =====================
 
+const MONTH_NAMES_SHORT_RU = [
+  'янв', 'фев', 'мар', 'апр', 'май', 'июн',
+  'июл', 'авг', 'сен', 'окт', 'ноя', 'дек',
+]
+
+function DeltaBadge({ current, previous }: { current: number; previous: number }) {
+  if (previous === 0 && current === 0) return null
+  const diff = current - previous
+  const pct = previous !== 0 ? Math.round((diff / previous) * 100) : current > 0 ? 100 : 0
+  if (diff === 0) return null
+
+  const isUp = diff > 0
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-[11px] font-medium ${
+      isUp ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
+    }`}>
+      {isUp ? '\u2191' : '\u2193'}{Math.abs(pct)}%
+    </span>
+  )
+}
+
+function KpiCard({
+  label,
+  yearValue,
+  monthValue,
+  prevMonthValue,
+  monthLabel,
+  colorClass,
+}: {
+  label: string
+  yearValue: number
+  monthValue: number
+  prevMonthValue: number
+  monthLabel: string
+  colorClass: string
+}) {
+  return (
+    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-4 shadow-sm">
+      <div className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-3">{label}</div>
+      <div className="flex items-end justify-between gap-4">
+        {/* Год */}
+        <div>
+          <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mb-0.5">За год</div>
+          <div className={`text-xl font-bold ${colorClass}`}>
+            {fmt(yearValue)} <span className="text-sm font-normal">\u20BD</span>
+          </div>
+        </div>
+        {/* Текущий месяц */}
+        <div className="text-right">
+          <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mb-0.5">{monthLabel}</div>
+          <div className={`text-base font-bold ${colorClass}`}>
+            {fmt(monthValue)} <span className="text-xs font-normal">\u20BD</span>
+          </div>
+          <DeltaBadge current={monthValue} previous={prevMonthValue} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SummaryCards({ data }: { data: FinancesData }) {
-  const profit = data.incomeTotalYear - data.expenseTotalYear
+  const now = new Date()
+  const currentMonth = now.getFullYear() === data.year ? now.getMonth() + 1 : 12
+  const prevMonth = currentMonth > 1 ? currentMonth - 1 : 12
+
+  const incomeMonth     = data.incomeTotal[currentMonth]  ?? 0
+  const incomePrev      = data.incomeTotal[prevMonth]      ?? 0
+  const expenseMonth    = data.expenseTotal[currentMonth]  ?? 0
+  const expensePrev     = data.expenseTotal[prevMonth]     ?? 0
+  const profitYear      = data.incomeTotalYear - data.expenseTotalYear
+  const profitMonth     = incomeMonth - expenseMonth
+  const profitPrev      = incomePrev - expensePrev
+
+  const monthLabel = MONTH_NAMES_SHORT_RU[currentMonth - 1]
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-4 shadow-sm">
-        <div className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">Выручка</div>
-        <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-          {fmtCurrency(data.incomeTotalYear)}
-        </div>
-      </div>
-      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-4 shadow-sm">
-        <div className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">Затраты</div>
-        <div className="text-xl font-bold text-red-500 dark:text-red-400">
-          {fmtCurrency(data.expenseTotalYear)}
-        </div>
-      </div>
-      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-4 shadow-sm">
-        <div className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">Прибыль</div>
-        <div className={`text-xl font-bold ${profit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
-          {fmtCurrency(profit)}
-        </div>
-      </div>
+      <KpiCard
+        label="Выручка"
+        yearValue={data.incomeTotalYear}
+        monthValue={incomeMonth}
+        prevMonthValue={incomePrev}
+        monthLabel={monthLabel}
+        colorClass="text-emerald-600 dark:text-emerald-400"
+      />
+      <KpiCard
+        label="Затраты"
+        yearValue={data.expenseTotalYear}
+        monthValue={expenseMonth}
+        prevMonthValue={expensePrev}
+        monthLabel={monthLabel}
+        colorClass="text-red-500 dark:text-red-400"
+      />
+      <KpiCard
+        label="Прибыль"
+        yearValue={profitYear}
+        monthValue={profitMonth}
+        prevMonthValue={profitPrev}
+        monthLabel={monthLabel}
+        colorClass={profitYear >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}
+      />
     </div>
   )
 }
