@@ -38,16 +38,11 @@ export function App() {
         <div className="max-w-[1600px] mx-auto h-full px-6 flex items-center justify-between">
           <div className="flex items-center gap-4">
             {/* Брендовая метка вместо логотипа — оставляем место для иконки в будущем */}
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-md bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 3v18h18" />
-                  <path d="M7 16l4-8 4 4 5-9" />
-                </svg>
-              </div>
-              <span className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 tracking-tight">
-                Дашборд руководителя
-              </span>
+            <div className="w-7 h-7 rounded-md bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 3v18h18" />
+                <path d="M7 16l4-8 4 4 5-9" />
+              </svg>
             </div>
 
             <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-800" />
