@@ -65,7 +65,7 @@ async function fetchB24Page(domain: string, token: string, start: number): Promi
     start: String(start),
   })
   // Multiple select[] params
-  const selectFields = ['id', 'title', F_AMOUNT, F_DATE, 'begindate', F_TYPE, F_CATEGORY]
+  const selectFields = ['id', 'title', F_AMOUNT, F_DATE, 'begindate', F_TYPE, F_CATEGORY, 'stageId']
   const selectStr = selectFields.map(f => `select[]=${encodeURIComponent(f)}`).join('&')
   const url = `https://${domain}/rest/crm.item.list?auth=${encodeURIComponent(token)}&entityTypeId=${ENTITY_TYPE_ID}&order[id]=ASC&start=${start}&${selectStr}`
 
@@ -152,6 +152,14 @@ export const paymentsService = {
     }
 
     const items = await fetchAllB24Items(domain, accessToken)
+
+    // Логируем уникальные стадии для настройки фильтра
+    const stages = new Map<string, number>()
+    for (const item of items) {
+      const s = String(item.stageId ?? 'null')
+      stages.set(s, (stages.get(s) ?? 0) + 1)
+    }
+    logger.info(`[payments] stages found:`, Object.fromEntries(stages))
 
     let upserted = 0
     let skipped = 0
