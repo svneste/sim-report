@@ -82,6 +82,19 @@ async function fetchB24Page(domain: string, token: string, start: number): Promi
   }
 }
 
+/** Определяет typeId смарт-процесса по entityTypeId через crm.type.list. */
+async function fetchSmartProcessTypeId(domain: string, token: string): Promise<number | null> {
+  const url = `https://${domain}/rest/crm.type.list?auth=${encodeURIComponent(token)}`
+  const res = await fetch(url, { signal: AbortSignal.timeout(10_000) })
+  if (!res.ok) return null
+  const json = await res.json() as { result?: { types?: Array<{ id: number; entityTypeId: number }> } }
+  const found = json.result?.types?.find(t => t.entityTypeId === ENTITY_TYPE_ID)
+  return found?.id ?? null
+}
+
+// Кэш typeId — определяется один раз при первом синке
+let cachedTypeId: number | null = null
+
 async function fetchAllB24Items(domain: string, token: string): Promise<B24Item[]> {
   const all: B24Item[] = []
   let start = 0
@@ -131,6 +144,13 @@ export const paymentsService = {
   /** Синхронизирует все платежи из B24 в PostgreSQL. */
   async sync(domain: string, accessToken: string) {
     const startedAt = Date.now()
+
+    // Определяем typeId для корректных ссылок на элементы
+    if (cachedTypeId == null) {
+      cachedTypeId = await fetchSmartProcessTypeId(domain, accessToken)
+      logger.info(`[payments] smart process typeId: ${cachedTypeId}`)
+    }
+
     const items = await fetchAllB24Items(domain, accessToken)
 
     let upserted = 0
@@ -234,12 +254,13 @@ export const paymentsService = {
       ))
       .orderBy(payments.paymentDate)
 
+    const typeId = cachedTypeId ?? 19
     return rows.map(r => ({
       id: r.id,
       title: r.title,
       amount: r.amount,
       date: r.paymentDate,
-      url: `https://${config.BITRIX24_DOMAIN}/crm/type/19/details/${r.id}/`,
+      url: `https://${config.BITRIX24_DOMAIN}/crm/type/${typeId}/details/${r.id}/`,
     }))
   },
 }
