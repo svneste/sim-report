@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { FinancesData, CategoryMonthly } from './api/payments'
 import { PaymentCellModal, type PaymentCellModalProps } from './PaymentCellModal'
+import { FinancesChart } from './FinancesChart'
 
 const MONTH_SHORT = [
   'янв', 'фев', 'мар', 'апр', 'май', 'июн',
@@ -375,6 +376,8 @@ export function FinancesReport({
       {!loading && data && (
         <>
           <SummaryCards data={data} />
+
+          <FinancesChart data={data} />
 
           <CategoryTable
             title="Поступления"
