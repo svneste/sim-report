@@ -185,8 +185,8 @@ export const paymentsService = {
     }
 
     const elapsed = Date.now() - startedAt
-    logger.info(`[payments] sync done: ${upserted} upserted, ${skipped} skipped, ${elapsed}ms`)
-    return { upserted, skipped, elapsed }
+    logger.info(`[payments] sync done: ${upserted} upserted, ${skipped} skipped, ${elapsed}ms, typeId=${cachedTypeId}`)
+    return { upserted, skipped, elapsed, typeId: cachedTypeId }
   },
 
   /** Возвращает агрегированные данные по платежам за год. */
