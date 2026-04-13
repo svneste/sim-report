@@ -101,19 +101,19 @@ function fetchPage(start: number): Promise<{ items: B24Item[]; total: number }> 
 
 /** Загружает ВСЕ элементы смарт-процесса 1032 с пагинацией (50 шт/запрос). */
 async function fetchAllItems(): Promise<B24Item[]> {
-  const first = await fetchPage(0)
-  const all = [...first.items]
-  const total = first.total
+  const all: B24Item[] = []
+  let start = 0
 
-  let start = 50
-  while (start < total) {
+  // Грузим пока приходят элементы (не полагаемся на total — он бывает 0)
+  while (true) {
     const page = await fetchPage(start)
     all.push(...page.items)
-    if (page.items.length === 0) break
+    console.log(`[finances] page start=${start}: got ${page.items.length} items, total so far: ${all.length}`)
+    if (page.items.length < 50) break   // последняя страница
     start += 50
   }
 
-  console.log(`[finances] loaded ${all.length} / ${total} items`)
+  console.log(`[finances] loaded all: ${all.length} items`)
   return all
 }
 
