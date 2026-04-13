@@ -28,50 +28,11 @@ function DeltaBadge({ current, previous }: { current: number; previous: number }
 
   const isUp = diff > 0
   return (
-    <span className={`inline-flex items-center gap-0.5 text-[11px] font-medium ${
+    <span className={`inline-flex items-center gap-0.5 text-[11px] font-medium mt-1 ${
       isUp ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
     }`}>
-      {isUp ? '\u2191' : '\u2193'}{Math.abs(pct)}%
+      {isUp ? '\u2191' : '\u2193'} {Math.abs(pct)}%
     </span>
-  )
-}
-
-function KpiCard({
-  label,
-  yearValue,
-  monthValue,
-  prevMonthValue,
-  monthLabel,
-  colorClass,
-}: {
-  label: string
-  yearValue: number
-  monthValue: number
-  prevMonthValue: number
-  monthLabel: string
-  colorClass: string
-}) {
-  return (
-    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-4 shadow-sm">
-      <div className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-3">{label}</div>
-      <div className="flex items-end justify-between gap-4">
-        {/* Год */}
-        <div>
-          <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mb-0.5">За год</div>
-          <div className={`text-xl font-bold ${colorClass}`}>
-            {fmt(yearValue)} <span className="text-sm font-normal">\u20BD</span>
-          </div>
-        </div>
-        {/* Текущий месяц */}
-        <div className="text-right">
-          <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mb-0.5">{monthLabel}</div>
-          <div className={`text-base font-bold ${colorClass}`}>
-            {fmt(monthValue)} <span className="text-xs font-normal">\u20BD</span>
-          </div>
-          <DeltaBadge current={monthValue} previous={prevMonthValue} />
-        </div>
-      </div>
-    </div>
   )
 }
 
@@ -79,43 +40,47 @@ function SummaryCards({ data }: { data: FinancesData }) {
   const now = new Date()
   const currentMonth = now.getFullYear() === data.year ? now.getMonth() + 1 : 12
   const prevMonth = currentMonth > 1 ? currentMonth - 1 : 12
+  const monthName = MONTH_NAMES_SHORT_RU[currentMonth - 1]
 
-  const incomeMonth     = data.incomeTotal[currentMonth]  ?? 0
-  const incomePrev      = data.incomeTotal[prevMonth]      ?? 0
-  const expenseMonth    = data.expenseTotal[currentMonth]  ?? 0
-  const expensePrev     = data.expenseTotal[prevMonth]     ?? 0
-  const profitYear      = data.incomeTotalYear - data.expenseTotalYear
-  const profitMonth     = incomeMonth - expenseMonth
-  const profitPrev      = incomePrev - expensePrev
+  const incomeMonth  = data.incomeTotal[currentMonth] ?? 0
+  const incomePrev   = data.incomeTotal[prevMonth] ?? 0
+  const expenseMonth = data.expenseTotal[currentMonth] ?? 0
+  const expensePrev  = data.expenseTotal[prevMonth] ?? 0
+  const profitYear   = data.incomeTotalYear - data.expenseTotalYear
+  const profitMonth  = incomeMonth - expenseMonth
+  const profitPrev   = incomePrev - expensePrev
 
-  const monthLabel = MONTH_NAMES_SHORT_RU[currentMonth - 1]
+  const cards: Array<{
+    label: string
+    yearVal: number
+    monthVal: number
+    prevVal: number
+    color: string
+  }> = [
+    { label: 'Выручка',  yearVal: data.incomeTotalYear,  monthVal: incomeMonth,  prevVal: incomePrev,  color: 'text-emerald-600 dark:text-emerald-400' },
+    { label: 'Затраты',  yearVal: data.expenseTotalYear, monthVal: expenseMonth, prevVal: expensePrev, color: 'text-red-500 dark:text-red-400' },
+    { label: 'Прибыль',  yearVal: profitYear,            monthVal: profitMonth,  prevVal: profitPrev,  color: profitYear >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400' },
+  ]
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-      <KpiCard
-        label="Выручка"
-        yearValue={data.incomeTotalYear}
-        monthValue={incomeMonth}
-        prevMonthValue={incomePrev}
-        monthLabel={monthLabel}
-        colorClass="text-emerald-600 dark:text-emerald-400"
-      />
-      <KpiCard
-        label="Затраты"
-        yearValue={data.expenseTotalYear}
-        monthValue={expenseMonth}
-        prevMonthValue={expensePrev}
-        monthLabel={monthLabel}
-        colorClass="text-red-500 dark:text-red-400"
-      />
-      <KpiCard
-        label="Прибыль"
-        yearValue={profitYear}
-        monthValue={profitMonth}
-        prevMonthValue={profitPrev}
-        monthLabel={monthLabel}
-        colorClass={profitYear >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}
-      />
+    <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 mb-6">
+      {cards.map(c => (
+        <div key={`y-${c.label}`} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 shadow-sm">
+          <div className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-2">{c.label} · год</div>
+          <div className={`text-lg font-bold ${c.color} leading-tight`}>
+            {fmt(c.yearVal)} <span className="text-xs font-normal opacity-60">&#8381;</span>
+          </div>
+        </div>
+      ))}
+      {cards.map(c => (
+        <div key={`m-${c.label}`} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 shadow-sm">
+          <div className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-2">{c.label} · {monthName}</div>
+          <div className={`text-lg font-bold ${c.color} leading-tight`}>
+            {fmt(c.monthVal)} <span className="text-xs font-normal opacity-60">&#8381;</span>
+          </div>
+          <DeltaBadge current={c.monthVal} previous={c.prevVal} />
+        </div>
+      ))}
     </div>
   )
 }
