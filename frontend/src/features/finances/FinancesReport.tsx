@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { FinancesData, CategoryMonthly } from './api/payments'
+import { PaymentCellModal, type PaymentCellModalProps } from './PaymentCellModal'
 
 const MONTH_SHORT = [
   'янв', 'фев', 'мар', 'апр', 'май', 'июн',
@@ -49,12 +50,14 @@ function CategoryTable({
   monthTotals,
   yearTotal,
   accentClass,
+  onCellClick,
 }: {
   title: string
   rows: CategoryMonthly[]
   monthTotals: Record<number, number>
   yearTotal: number
   accentClass: string
+  onCellClick: (category: string, month: number) => void
 }) {
   const months = useMemo(() => Array.from({ length: 12 }, (_, i) => i + 1), [])
   const [sortByMonth, setSortByMonth] = useState<number | null>(null)
@@ -147,11 +150,20 @@ function CategoryTable({
                       <td key={m} className={`border-l border-zinc-200 dark:border-zinc-800 p-0 ${
                         isSorted ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : ''
                       }`}>
-                        <div className={`h-[36px] flex items-center justify-center text-[12px] font-semibold ${
-                          v > 0 ? accentClass : 'text-zinc-300 dark:text-zinc-700'
-                        }`}>
-                          {v > 0 ? fmt(v) : '\u2014'}
-                        </div>
+                        {v > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => onCellClick(r.category, m)}
+                            className={`w-full h-[36px] flex items-center justify-center text-[12px] font-semibold cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ${accentClass}`}
+                            title={`${r.category} — ${MONTH_SHORT[m - 1]}: ${fmt(v)} ₽`}
+                          >
+                            {fmt(v)}
+                          </button>
+                        ) : (
+                          <div className="h-[36px] flex items-center justify-center text-[12px] font-semibold text-zinc-300 dark:text-zinc-700">
+                            {'\u2014'}
+                          </div>
+                        )}
                       </td>
                     )
                   })}
@@ -266,6 +278,7 @@ export function FinancesReport({
   onSync,
 }: FinancesReportProps) {
   const busy = loading || syncing
+  const [modal, setModal] = useState<Omit<PaymentCellModalProps, 'onClose'> | null>(null)
 
   return (
     <div>
@@ -326,6 +339,7 @@ export function FinancesReport({
             monthTotals={data.incomeTotal}
             yearTotal={data.incomeTotalYear}
             accentClass="text-emerald-700 dark:text-emerald-300"
+            onCellClick={(category, month) => setModal({ category, type: 'income', year, month })}
           />
 
           <CategoryTable
@@ -334,8 +348,16 @@ export function FinancesReport({
             monthTotals={data.expenseTotal}
             yearTotal={data.expenseTotalYear}
             accentClass="text-red-600 dark:text-red-400"
+            onCellClick={(category, month) => setModal({ category, type: 'expense', year, month })}
           />
         </>
+      )}
+
+      {modal && (
+        <PaymentCellModal
+          {...modal}
+          onClose={() => setModal(null)}
+        />
       )}
     </div>
   )

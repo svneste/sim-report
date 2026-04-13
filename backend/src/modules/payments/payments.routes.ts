@@ -7,6 +7,13 @@ const yearSchema = z.object({
   year: z.coerce.number().int().min(2000).max(2100),
 })
 
+const cellSchema = z.object({
+  category: z.string().min(1),
+  type:     z.enum(['income', 'expense']),
+  year:     z.coerce.number().int().min(2000).max(2100),
+  month:    z.coerce.number().int().min(1).max(12),
+})
+
 export const paymentsRoutes: FastifyPluginAsync = async (app) => {
   /**
    * POST /api/payments/sync
@@ -34,5 +41,20 @@ export const paymentsRoutes: FastifyPluginAsync = async (app) => {
       return { error: 'invalid query', details: parsed.error.flatten() }
     }
     return paymentsService.getByYear(parsed.data.year)
+  })
+
+  /**
+   * GET /api/payments/cell?category=...&type=income&year=2025&month=2
+   * Список платежей для конкретной ячейки таблицы.
+   */
+  app.get('/api/payments/cell', async (req, reply) => {
+    const parsed = cellSchema.safeParse(req.query)
+    if (!parsed.success) {
+      reply.code(400)
+      return { error: 'invalid query', details: parsed.error.flatten() }
+    }
+    const { category, type, year, month } = parsed.data
+    const items = await paymentsService.getCellPayments(category, type, year, month)
+    return { items }
   })
 }

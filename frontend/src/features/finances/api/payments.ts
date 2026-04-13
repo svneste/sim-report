@@ -67,6 +67,32 @@ export async function fetchFinancesData(year: number): Promise<FinancesData> {
   }
 }
 
+// ===================== ДЕТАЛИ ЯЧЕЙКИ =====================
+
+export interface PaymentItem {
+  id:     number
+  title:  string | null
+  amount: number
+  date:   string
+  url:    string
+}
+
+/** Загружает список платежей для конкретной ячейки таблицы. */
+export function fetchCellPayments(
+  category: string,
+  type: 'income' | 'expense',
+  year: number,
+  month: number,
+): Promise<{ items: PaymentItem[] }> {
+  const params = new URLSearchParams({
+    category,
+    type,
+    year: String(year),
+    month: String(month),
+  })
+  return http(`/api/payments/cell?${params}`)
+}
+
 /** Фильтрует FinancesData по направлению (МегаФон / CRM). */
 export function filterFinancesData(
   data: FinancesData,

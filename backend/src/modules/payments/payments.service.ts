@@ -2,7 +2,7 @@ import { db } from '../../db/client.js'
 import { payments } from '../../db/schema.js'
 import { config } from '../../core/config.js'
 import { logger } from '../../core/logger.js'
-import { sql, eq } from 'drizzle-orm'
+import { sql, eq, and } from 'drizzle-orm'
 
 // ===================== B24 FIELD CONFIG =====================
 
@@ -208,5 +208,38 @@ export const paymentsService = {
     const expense = toRows(expenseMap)
 
     return { year, income, expense }
+  },
+
+  /** Список платежей для конкретной ячейки (категория + тип + год + месяц). */
+  async getCellPayments(category: string, type: string, year: number, month: number) {
+    const from = `${year}-${String(month).padStart(2, '0')}-01`
+    const toMonth = month === 12 ? 1 : month + 1
+    const toYear  = month === 12 ? year + 1 : year
+    const to = `${toYear}-${String(toMonth).padStart(2, '0')}-01`
+
+    const rows = await db
+      .select({
+        id: payments.id,
+        title: payments.title,
+        amount: payments.amount,
+        paymentDate: payments.paymentDate,
+        category: payments.category,
+      })
+      .from(payments)
+      .where(and(
+        eq(payments.category, category),
+        eq(payments.type, type),
+        sql`${payments.paymentDate} >= ${from}::date`,
+        sql`${payments.paymentDate} < ${to}::date`,
+      ))
+      .orderBy(payments.paymentDate)
+
+    return rows.map(r => ({
+      id: r.id,
+      title: r.title,
+      amount: r.amount,
+      date: r.paymentDate,
+      url: `https://${config.BITRIX24_DOMAIN}/crm/type/19/details/${r.id}/`,
+    }))
   },
 }
