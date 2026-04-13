@@ -254,13 +254,12 @@ export const paymentsService = {
       ))
       .orderBy(payments.paymentDate)
 
-    const typeId = cachedTypeId ?? 19
     return rows.map(r => ({
       id: r.id,
       title: r.title,
       amount: r.amount,
       date: r.paymentDate,
-      url: `https://${config.BITRIX24_DOMAIN}/crm/type/${typeId}/details/${r.id}/`,
+      url: `https://${config.BITRIX24_DOMAIN}/page/dokumentooborot/platezhi/type/1032/details/${r.id}/`,
     }))
   },
 }
