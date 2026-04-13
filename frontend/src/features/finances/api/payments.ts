@@ -247,9 +247,18 @@ export async function fetchFinancesData(year: number, forceReload = false): Prom
   const key = 'payments-v1'
   if (!cachedPayments || cacheKey !== key || forceReload) {
     const [items, fields] = await Promise.all([fetchAllItems(), fetchFieldDefs()])
+    console.log('[finances] items:', items.length, 'sample:', items[0])
+    console.log('[finances] type field def:', fields[F_TYPE])
+    console.log('[finances] cat field def:', fields[F_CATEGORY])
+    if (items[0]) {
+      console.log('[finances] sample type val:', items[0][F_TYPE], 'amount:', items[0][F_AMOUNT], 'date:', items[0][F_DATE])
+    }
     const typeEnumMap = buildEnumMap(fields, F_TYPE)
     const catEnumMap  = buildEnumMap(fields, F_CATEGORY)
+    console.log('[finances] typeEnum entries:', [...typeEnumMap.entries()].slice(0, 6))
+    console.log('[finances] catEnum entries:', [...catEnumMap.entries()].slice(0, 10))
     cachedPayments = parsePayments(items, typeEnumMap, catEnumMap)
+    console.log('[finances] parsed payments:', cachedPayments.length, 'sample:', cachedPayments[0])
     cacheKey = key
   }
   return aggregateByYear(cachedPayments, year)
