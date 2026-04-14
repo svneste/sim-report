@@ -91,10 +91,16 @@ export function parseXlsx(buffer: Buffer, filename: string): ParsedRow[] {
   }
 
   const ws = wb.Sheets[sheetName]
-  const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false, dateNF: 'yyyy-mm-dd' })
+  const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true })
 
   const contractId = extractContractId(filename)
   const parsed: ParsedRow[] = []
+
+  // Лог первой строки данных для отладки парсинга
+  if (rows[2]) {
+    const r = rows[2] as unknown[]
+    logger.info(`[megafon] sample row[2]: period=${r[1]}, activationDate=${r[14]} (${typeof r[14]}), registrationDate=${r[15]} (${typeof r[15]})`)
+  }
 
   // Пропускаем заголовки (строки 0-1), данные начинаются со строки 2
   for (let i = 2; i < rows.length; i++) {
