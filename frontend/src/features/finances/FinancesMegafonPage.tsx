@@ -269,7 +269,8 @@ export function FinancesMegafonPage() {
           {/* По контрагентам */}
           <ReportTable
             title="По контрагентам"
-            rows={report.byAgent.map(r => ({ label: r.agent, subscribers: r.subscribers, activated: r.activated, chargesMonth: r.chargesMonth, rewardMonth: r.rewardMonth }))}
+            rows={report.byAgent.map(r => ({ label: r.agent, subscribers: r.subscribers, activated: r.activated, chargesMonth: r.chargesMonth, rewardMonth: r.rewardMonth, rewardRates: r.rewardRates }))}
+            showRates
           />
 
           {/* По периодам (если выбрано "Все периоды") */}
@@ -294,9 +295,10 @@ export function FinancesMegafonPage() {
 
 // ===================== Таблица отчёта =====================
 
-function ReportTable({ title, rows }: {
+function ReportTable({ title, rows, showRates }: {
   title: string
-  rows: Array<{ label: string; subscribers: number; activated: number; chargesMonth: number; rewardMonth: number }>
+  rows: Array<{ label: string; subscribers: number; activated: number; chargesMonth: number; rewardMonth: number; rewardRates?: string | null }>
+  showRates?: boolean
 }) {
   if (rows.length === 0) return null
 
@@ -328,6 +330,11 @@ function ReportTable({ title, rows }: {
                 <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-36">
                   Вознаграждение
                 </th>
+                {showRates && (
+                  <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24">
+                    Ставка
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -358,6 +365,13 @@ function ReportTable({ title, rows }: {
                       {fmt(r.rewardMonth)}
                     </div>
                   </td>
+                  {showRates && (
+                    <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
+                      <div className="h-[36px] flex items-center justify-end text-[12px] font-medium text-zinc-500 dark:text-zinc-400">
+                        {r.rewardRates ? `${r.rewardRates}%` : '—'}
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
               {/* Итого */}
@@ -385,6 +399,11 @@ function ReportTable({ title, rows }: {
                     {fmt(totalReward)}
                   </div>
                 </td>
+                {showRates && (
+                  <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
+                    <div className="h-[36px]" />
+                  </td>
+                )}
               </tr>
             </tbody>
           </table>

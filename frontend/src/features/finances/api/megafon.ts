@@ -20,7 +20,7 @@ export interface PeriodInfo {
 export interface MegafonReport {
   totals: { subscribers: number; activated: number; chargesMonth: number; rewardMonth: number }
   bySegment: Array<{ segment: string | null; subscribers: number; activated: number; chargesMonth: number; rewardMonth: number }>
-  byAgent: Array<{ agent: string; subscribers: number; activated: number; chargesMonth: number; rewardMonth: number }>
+  byAgent: Array<{ agent: string; subscribers: number; activated: number; chargesMonth: number; rewardMonth: number; rewardRates: string | null }>
   byPeriod: Array<{ period: number; subscribers: number; activated: number; chargesMonth: number; rewardMonth: number }>
 }
 

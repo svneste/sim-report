@@ -339,6 +339,7 @@ export const megafonService = {
         activated: activatedExpr,
         chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::int`,
         rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::int`,
+        rewardRates: sql<string>`string_agg(distinct ${megafonReportRows.rewardRate}::text, ', ' order by ${megafonReportRows.rewardRate}::text)`,
       })
       .from(megafonReportRows)
       .where(where)
