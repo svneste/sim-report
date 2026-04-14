@@ -351,30 +351,40 @@ export const simReportService = {
       const regMap = new Map<string, number>()
       for (const r of regRows) regMap.set(String(r.ym), Number(r.count))
 
-      // 2) Включено — по lead_status_transitions.occurred_at для success-статусов
-      //    Берём только первый переход в success для каждой сделки (DISTINCT ON)
+      // 2) Включено — гибрид: occurred_at из lead_status_transitions если есть,
+      //    иначе registered_on для сделок в success-статусе (исторические данные
+      //    до запуска sync событий).
       const actRows = await db
         .select({
-          ym: sql<string>`to_char(t.occurred_at AT TIME ZONE 'Europe/Moscow', 'YYYY-MM')`,
+          ym: sql<string>`to_char(
+            COALESCE(
+              (SELECT min(lst.occurred_at) FROM lead_status_transitions lst
+               WHERE lst.deal_id = ${amocrmDeals.id}
+               AND lst.status_id IN (${sql.raw(successIds.join(','))})),
+              ${simRegistrations.registeredOn}::timestamp
+            ) AT TIME ZONE 'Europe/Moscow', 'YYYY-MM')`,
           count: sql<number>`count(*)::int`,
         })
-        .from(
-          db.select({
-            dealId: leadStatusTransitions.dealId,
-            occurredAt: sql`min(${leadStatusTransitions.occurredAt})`.as('occurred_at'),
-          })
-          .from(leadStatusTransitions)
-          .innerJoin(amocrmDeals, eq(amocrmDeals.id, leadStatusTransitions.dealId))
-          .where(and(
-            inArray(leadStatusTransitions.statusId, successIds.map(Number)),
-            eq(amocrmDeals.pipelineId, config.AMOCRM_PIPELINE_ID),
-            sql`(${leadStatusTransitions.occurredAt} AT TIME ZONE 'Europe/Moscow') >= ${startIso}::timestamp`,
-            ...(mnpWhere ? [mnpWhere] : []),
-          ))
-          .groupBy(leadStatusTransitions.dealId)
-          .as('t')
-        )
-        .groupBy(sql`to_char(t.occurred_at AT TIME ZONE 'Europe/Moscow', 'YYYY-MM')`)
+        .from(amocrmDeals)
+        .innerJoin(simRegistrations, eq(simRegistrations.dealId, amocrmDeals.id))
+        .where(and(
+          eq(amocrmDeals.pipelineId, config.AMOCRM_PIPELINE_ID),
+          inArray(amocrmDeals.statusId, successIds),
+          sql`COALESCE(
+            (SELECT min(lst.occurred_at) FROM lead_status_transitions lst
+             WHERE lst.deal_id = ${amocrmDeals.id}
+             AND lst.status_id IN (${sql.raw(successIds.join(','))})),
+            ${simRegistrations.registeredOn}::timestamp
+          ) AT TIME ZONE 'Europe/Moscow' >= ${startIso}::timestamp`,
+          ...(mnpWhere ? [mnpWhere] : []),
+        ))
+        .groupBy(sql`to_char(
+          COALESCE(
+            (SELECT min(lst.occurred_at) FROM lead_status_transitions lst
+             WHERE lst.deal_id = ${amocrmDeals.id}
+             AND lst.status_id IN (${sql.raw(successIds.join(','))})),
+            ${simRegistrations.registeredOn}::timestamp
+          ) AT TIME ZONE 'Europe/Moscow', 'YYYY-MM')`)
 
       const actMap = new Map<string, number>()
       for (const r of actRows) actMap.set(String(r.ym), Number(r.count))
