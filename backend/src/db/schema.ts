@@ -115,6 +115,41 @@ export const payments = pgTable('payments', {
   dateIdx: index('payments_date_idx').on(t.paymentDate),
 }))
 
+/**
+ * Строки из отчётов МегаФон (детальный отчёт по абонентам).
+ * Загружаются через POST /api/megafon/upload.
+ * PK = (period + subscriberId) — один абонент за период уникален.
+ */
+export const megafonReportRows = pgTable('megafon_report_rows', {
+  id:              bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  period:          integer('period').notNull(),              // 202603
+  agent:           text('agent').notNull(),                  // Контрагент
+  contractId:      text('contract_id'),                      // ID из имени файла (pscs_id)
+  clientName:      text('client_name'),                      // Наименование клиента
+  clientInn:       text('client_inn'),                       // ИНН клиента
+  segment:         text('segment'),                          // Сегмент абонента
+  phoneActivation: text('phone_activation'),                 // Номер на момент активации
+  phoneCurrent:    text('phone_current'),                    // Номер на конец месяца
+  subscriberId:    text('subscriber_id'),                    // ИД абонента
+  activationDate:  timestamp('activation_date', { withTimezone: true }),
+  registrationDate: date('registration_date'),
+  tariffActivation: text('tariff_activation'),               // ТП на дату активации
+  tariffCurrent:   text('tariff_current'),                   // ТП на конец месяца
+  pointOfSale:     text('point_of_sale'),                    // Точка продаж
+  chargesTotal:    integer('charges_total'),                 // Начисления накопительно (копейки)
+  chargesPrev:     integer('charges_prev'),                  // Начисления за предыдущие периоды
+  chargesMonth:    integer('charges_month'),                 // Начисления за отчётный месяц
+  rewardPrev:      integer('reward_prev'),                   // Вознаграждение за пред. периоды
+  rewardRate:      integer('reward_rate'),                   // Ставка % (целое, напр. 15)
+  rewardMonth:     integer('reward_month'),                  // Вознаграждение за месяц (копейки)
+  uploadedAt:      timestamp('uploaded_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  periodIdx:  index('mfr_period_idx').on(t.period),
+  agentIdx:   index('mfr_agent_idx').on(t.agent),
+  segmentIdx: index('mfr_segment_idx').on(t.segment),
+  subIdx:     index('mfr_sub_idx').on(t.period, t.subscriberId),
+}))
+
 export type AmocrmUser     = typeof amocrmUsers.$inferSelect
 export type AmocrmDeal     = typeof amocrmDeals.$inferSelect
 export type SimRegistration = typeof simRegistrations.$inferSelect

@@ -10,6 +10,8 @@ import { resetStatusEventsWatermark, syncStatusEvents } from './modules/sync/sta
 import { usersRoutes } from './modules/users/users.routes.js'
 import { bitrix24UsersRoutes } from './modules/bitrix24-users/bitrix24-users.routes.js'
 import { paymentsRoutes } from './modules/payments/payments.routes.js'
+import { megafonRoutes } from './modules/megafon/megafon.routes.js'
+import multipart from '@fastify/multipart'
 import { bitrix24AuthHook } from './modules/bitrix24-auth/b24-auth.hook.js'
 import { sql } from 'drizzle-orm'
 import { db } from './db/client.js'
@@ -17,6 +19,7 @@ import { db } from './db/client.js'
 const app = Fastify({ logger: false })
 
 await app.register(cors, { origin: config.CORS_ORIGIN === '*' ? true : config.CORS_ORIGIN.split(',') })
+await app.register(multipart, { limits: { fileSize: 50 * 1024 * 1024 } }) // 50MB
 
 // Жёсткая защита /api/* — только запросы с валидным BX24 access_token.
 // Хук сам пропускает /health и всё, что не /api/*.
@@ -81,6 +84,7 @@ await app.register(associationsReportRoutes)
 await app.register(usersRoutes)
 await app.register(bitrix24UsersRoutes)
 await app.register(paymentsRoutes)
+await app.register(megafonRoutes)
 
 app.listen({ port: config.PORT, host: config.HOST })
   .then(() => {

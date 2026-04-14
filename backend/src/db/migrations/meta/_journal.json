@@ -29,6 +29,13 @@
       "when": 1776095000000,
       "tag": "0003_payments_company_name",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776200000000,
+      "tag": "0004_megafon_report_rows",
+      "breakpoints": true
     }
   ]
 }
