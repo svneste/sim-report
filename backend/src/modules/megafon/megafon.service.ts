@@ -242,11 +242,18 @@ export const megafonService = {
   async getReport(period?: number) {
     const where = period ? eq(megafonReportRows.period, period) : undefined
 
+    // Подсчёт подключений за период: activation_date попадает в месяц period
+    const activatedExpr = sql<number>`count(*) FILTER (WHERE
+      extract(year from ${megafonReportRows.activationDate})::int * 100
+      + extract(month from ${megafonReportRows.activationDate})::int
+      = ${megafonReportRows.period})::int`
+
     // По сегментам
     const bySegment = await db
       .select({
         segment: megafonReportRows.segment,
         subscribers: sql<number>`count(*)::int`,
+        activated: activatedExpr,
         chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::int`,
         rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::int`,
       })
@@ -260,6 +267,7 @@ export const megafonService = {
       .select({
         agent: megafonReportRows.agent,
         subscribers: sql<number>`count(*)::int`,
+        activated: activatedExpr,
         chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::int`,
         rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::int`,
       })
@@ -273,6 +281,7 @@ export const megafonService = {
       .select({
         period: megafonReportRows.period,
         subscribers: sql<number>`count(*)::int`,
+        activated: activatedExpr,
         chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::int`,
         rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::int`,
       })
@@ -284,6 +293,7 @@ export const megafonService = {
     const totals = await db
       .select({
         subscribers: sql<number>`count(*)::int`,
+        activated: activatedExpr,
         chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::int`,
         rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::int`,
       })
@@ -291,7 +301,7 @@ export const megafonService = {
       .where(where)
 
     return {
-      totals: totals[0] ?? { subscribers: 0, chargesMonth: 0, rewardMonth: 0 },
+      totals: totals[0] ?? { subscribers: 0, activated: 0, chargesMonth: 0, rewardMonth: 0 },
       bySegment,
       byAgent,
       byPeriod,

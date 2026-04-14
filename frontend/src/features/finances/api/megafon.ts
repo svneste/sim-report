@@ -18,10 +18,10 @@ export interface PeriodInfo {
 }
 
 export interface MegafonReport {
-  totals: { subscribers: number; chargesMonth: number; rewardMonth: number }
-  bySegment: Array<{ segment: string | null; subscribers: number; chargesMonth: number; rewardMonth: number }>
-  byAgent: Array<{ agent: string; subscribers: number; chargesMonth: number; rewardMonth: number }>
-  byPeriod: Array<{ period: number; subscribers: number; chargesMonth: number; rewardMonth: number }>
+  totals: { subscribers: number; activated: number; chargesMonth: number; rewardMonth: number }
+  bySegment: Array<{ segment: string | null; subscribers: number; activated: number; chargesMonth: number; rewardMonth: number }>
+  byAgent: Array<{ agent: string; subscribers: number; activated: number; chargesMonth: number; rewardMonth: number }>
+  byPeriod: Array<{ period: number; subscribers: number; activated: number; chargesMonth: number; rewardMonth: number }>
 }
 
 export async function uploadMegafonFile(file: File): Promise<UploadResult> {

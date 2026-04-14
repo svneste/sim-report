@@ -170,11 +170,17 @@ export function FinancesMegafonPage() {
       {!loading && report && (
         <>
           {/* KPI */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
             <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-4 shadow-sm">
               <div className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-2">Абонентов</div>
               <div className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
                 {report.totals.subscribers.toLocaleString('ru-RU')}
+              </div>
+            </div>
+            <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-4 shadow-sm">
+              <div className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-2">Подключено</div>
+              <div className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                {report.totals.activated.toLocaleString('ru-RU')}
               </div>
             </div>
             <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-4 shadow-sm">
@@ -194,20 +200,20 @@ export function FinancesMegafonPage() {
           {/* По сегментам */}
           <ReportTable
             title="По сегментам"
-            rows={report.bySegment.map(r => ({ label: r.segment ?? 'Не указан', ...r }))}
+            rows={report.bySegment.map(r => ({ label: r.segment ?? 'Не указан', subscribers: r.subscribers, activated: r.activated, chargesMonth: r.chargesMonth, rewardMonth: r.rewardMonth }))}
           />
 
           {/* По контрагентам */}
           <ReportTable
             title="По контрагентам"
-            rows={report.byAgent.map(r => ({ label: r.agent, ...r }))}
+            rows={report.byAgent.map(r => ({ label: r.agent, subscribers: r.subscribers, activated: r.activated, chargesMonth: r.chargesMonth, rewardMonth: r.rewardMonth }))}
           />
 
           {/* По периодам (если выбрано "Все периоды") */}
           {!selectedPeriod && report.byPeriod.length > 1 && (
             <ReportTable
               title="По периодам"
-              rows={report.byPeriod.map(r => ({ label: periodLabel(r.period), ...r }))}
+              rows={report.byPeriod.map(r => ({ label: periodLabel(r.period), subscribers: r.subscribers, activated: r.activated, chargesMonth: r.chargesMonth, rewardMonth: r.rewardMonth }))}
             />
           )}
 
@@ -227,13 +233,14 @@ export function FinancesMegafonPage() {
 
 function ReportTable({ title, rows }: {
   title: string
-  rows: Array<{ label: string; subscribers: number; chargesMonth: number; rewardMonth: number }>
+  rows: Array<{ label: string; subscribers: number; activated: number; chargesMonth: number; rewardMonth: number }>
 }) {
   if (rows.length === 0) return null
 
-  const totalSubs    = rows.reduce((s, r) => s + r.subscribers, 0)
-  const totalCharges = rows.reduce((s, r) => s + r.chargesMonth, 0)
-  const totalReward  = rows.reduce((s, r) => s + r.rewardMonth, 0)
+  const totalSubs      = rows.reduce((s, r) => s + r.subscribers, 0)
+  const totalActivated = rows.reduce((s, r) => s + r.activated, 0)
+  const totalCharges   = rows.reduce((s, r) => s + r.chargesMonth, 0)
+  const totalReward    = rows.reduce((s, r) => s + r.rewardMonth, 0)
 
   return (
     <div className="mb-6">
@@ -248,6 +255,9 @@ function ReportTable({ title, rows }: {
                 </th>
                 <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-28">
                   Абонентов
+                </th>
+                <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-28">
+                  Подключено
                 </th>
                 <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-36">
                   Начисления
@@ -271,6 +281,11 @@ function ReportTable({ title, rows }: {
                     </div>
                   </td>
                   <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
+                    <div className="h-[36px] flex items-center justify-end text-[12px] font-semibold text-blue-600 dark:text-blue-400">
+                      {r.activated.toLocaleString('ru-RU')}
+                    </div>
+                  </td>
+                  <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
                     <div className="h-[36px] flex items-center justify-end text-[12px] font-semibold text-zinc-700 dark:text-zinc-300">
                       {fmt(r.chargesMonth)}
                     </div>
@@ -290,6 +305,11 @@ function ReportTable({ title, rows }: {
                 <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
                   <div className="h-[36px] flex items-center justify-end text-[12px] font-bold text-zinc-900 dark:text-zinc-100">
                     {totalSubs.toLocaleString('ru-RU')}
+                  </div>
+                </td>
+                <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
+                  <div className="h-[36px] flex items-center justify-end text-[12px] font-bold text-blue-600 dark:text-blue-400">
+                    {totalActivated.toLocaleString('ru-RU')}
                   </div>
                 </td>
                 <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
