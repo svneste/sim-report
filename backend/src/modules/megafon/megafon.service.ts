@@ -242,10 +242,10 @@ export const megafonService = {
   async getReport(period?: number) {
     const where = period ? eq(megafonReportRows.period, period) : undefined
 
-    // Подсчёт подключений за период: activation_date попадает в месяц period
+    // Подсчёт подключений за период: registration_date попадает в месяц period
     const activatedExpr = sql<number>`count(*) FILTER (WHERE
-      extract(year from ${megafonReportRows.activationDate})::int * 100
-      + extract(month from ${megafonReportRows.activationDate})::int
+      extract(year from ${megafonReportRows.registrationDate})::int * 100
+      + extract(month from ${megafonReportRows.registrationDate})::int
       = ${megafonReportRows.period})::int`
 
     // По сегментам
