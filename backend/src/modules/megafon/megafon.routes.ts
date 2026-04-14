@@ -28,6 +28,25 @@ export const megafonRoutes: FastifyPluginAsync = async (app) => {
   })
 
   /**
+   * GET /api/megafon/uploads
+   * Список загруженных файлов.
+   */
+  app.get('/api/megafon/uploads', async () => {
+    return megafonService.getUploads()
+  })
+
+  /**
+   * DELETE /api/megafon/uploads/:id
+   * Удалить загруженный файл и его данные.
+   */
+  app.delete('/api/megafon/uploads/:id', async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const numId = Number(id)
+    if (!numId) { reply.code(400); return { error: 'invalid id' } }
+    return megafonService.deleteUpload(numId)
+  })
+
+  /**
    * GET /api/megafon/periods
    * Список загруженных периодов.
    */

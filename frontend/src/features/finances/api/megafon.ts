@@ -43,6 +43,35 @@ export async function uploadMegafonFile(file: File): Promise<UploadResult> {
   return json
 }
 
+export interface UploadedFile {
+  id:         number
+  filename:   string
+  period:     number
+  contractId: string | null
+  rowCount:   number
+  uploadedAt: string
+}
+
+export async function fetchMegafonUploads(): Promise<UploadedFile[]> {
+  const headers: Record<string, string> = {}
+  const token = getB24Token()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${BASE}/api/megafon/uploads`, { headers })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+export async function deleteMegafonUpload(id: number): Promise<{ deleted: boolean }> {
+  const headers: Record<string, string> = {}
+  const token = getB24Token()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${BASE}/api/megafon/uploads/${id}`, { method: 'DELETE', headers })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
 export async function fetchMegafonPeriods(): Promise<PeriodInfo[]> {
   const headers: Record<string, string> = {}
   const token = getB24Token()

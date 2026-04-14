@@ -3,9 +3,12 @@ import {
   uploadMegafonFile,
   fetchMegafonPeriods,
   fetchMegafonReport,
+  fetchMegafonUploads,
+  deleteMegafonUpload,
   type PeriodInfo,
   type MegafonReport,
   type UploadResult,
+  type UploadedFile,
 } from './api/megafon'
 
 const fmt = (kopecks: number) =>
@@ -26,6 +29,8 @@ export function FinancesMegafonPage() {
   const [periods, setPeriods]       = useState<PeriodInfo[]>([])
   const [selectedPeriod, setSelected] = useState<number | undefined>()
   const [report, setReport]         = useState<MegafonReport | null>(null)
+  const [uploads, setUploads]       = useState<UploadedFile[]>([])
+  const [showUploads, setShowUploads] = useState(false)
   const [loading, setLoading]       = useState(true)
   const [uploading, setUploading]   = useState(false)
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null)
@@ -33,8 +38,9 @@ export function FinancesMegafonPage() {
 
   const loadPeriods = useCallback(async () => {
     try {
-      const p = await fetchMegafonPeriods()
+      const [p, u] = await Promise.all([fetchMegafonPeriods(), fetchMegafonUploads()])
       setPeriods(p)
+      setUploads(u)
       return p
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -117,6 +123,18 @@ export function FinancesMegafonPage() {
             </select>
           )}
 
+          {/* Список файлов */}
+          <button
+            onClick={() => setShowUploads(v => !v)}
+            className="px-3 h-8 rounded-lg border border-zinc-200 bg-white text-sm hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:text-zinc-200 transition-colors flex items-center gap-1.5"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            Файлы ({uploads.length})
+          </button>
+
           {/* Кнопка загрузки */}
           <label className={`px-3 h-8 rounded-lg border text-sm flex items-center gap-1.5 cursor-pointer transition-colors ${
             uploading
@@ -151,6 +169,51 @@ export function FinancesMegafonPage() {
       {error && (
         <div className="mb-4 p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300 text-sm">
           {error}
+        </div>
+      )}
+
+      {/* Список загруженных файлов */}
+      {showUploads && (
+        <div className="mb-4 border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+            <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Загруженные файлы</span>
+            <button onClick={() => setShowUploads(false)} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-sm">&#x2715;</button>
+          </div>
+          {uploads.length === 0 ? (
+            <div className="px-4 py-6 text-center text-sm text-zinc-500 dark:text-zinc-400">Нет загруженных файлов</div>
+          ) : (
+            <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              {uploads.map(u => (
+                <li key={u.id} className="px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] text-zinc-900 dark:text-zinc-100 truncate">{u.filename}</div>
+                    <div className="text-[11px] text-zinc-400 dark:text-zinc-500 flex items-center gap-2 mt-0.5">
+                      <span>{periodLabel(u.period)}</span>
+                      <span>{u.rowCount.toLocaleString('ru-RU')} строк</span>
+                      <span>{new Date(u.uploadedAt).toLocaleDateString('ru-RU')}</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`Удалить файл «${u.filename}» и все его данные?`)) return
+                      try {
+                        await deleteMegafonUpload(u.id)
+                        const p = await loadPeriods()
+                        const last = p.length > 0 ? p[p.length - 1].period : undefined
+                        setSelected(last)
+                        void loadReport(last)
+                      } catch (e) {
+                        setError(e instanceof Error ? e.message : String(e))
+                      }
+                    }}
+                    className="px-2 py-1 text-[11px] rounded-md border border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/40 dark:text-red-400 dark:hover:bg-red-950/40 transition-colors shrink-0"
+                  >
+                    Удалить
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

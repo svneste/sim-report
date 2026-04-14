@@ -1,8 +1,8 @@
 import * as XLSX from 'xlsx'
 import { db } from '../../db/client.js'
-import { megafonReportRows } from '../../db/schema.js'
+import { megafonReportRows, megafonUploads } from '../../db/schema.js'
 import { logger } from '../../core/logger.js'
-import { sql, eq, and } from 'drizzle-orm'
+import { sql, eq, and, desc } from 'drizzle-orm'
 
 // ===================== XLSX PARSING =====================
 
@@ -235,6 +235,21 @@ export const megafonService = {
       inserted += chunk.length
     }
 
+    // Удаляем старую запись о файле (тот же период + контракт)
+    if (contractId) {
+      await db.delete(megafonUploads).where(
+        and(eq(megafonUploads.period, period), eq(megafonUploads.contractId, contractId))
+      )
+    }
+
+    // Сохраняем запись о загруженном файле
+    await db.insert(megafonUploads).values({
+      filename,
+      period,
+      contractId,
+      rowCount: inserted,
+    })
+
     const summary = parseSummary(buffer)
     const elapsed = Date.now() - startedAt
     logger.info(`[megafon] uploaded ${filename}: ${inserted} rows, period=${period}, ${elapsed}ms`)
@@ -246,6 +261,35 @@ export const megafonService = {
       totalRewardWithVat: summary.totalRewardWithVat,
       elapsed,
     }
+  },
+
+  /** Список загруженных файлов. */
+  async getUploads() {
+    return db
+      .select()
+      .from(megafonUploads)
+      .orderBy(desc(megafonUploads.uploadedAt))
+  },
+
+  /** Удаляет загруженный файл и связанные данные. */
+  async deleteUpload(uploadId: number) {
+    const [upload] = await db.select().from(megafonUploads).where(eq(megafonUploads.id, uploadId))
+    if (!upload) return { deleted: false, error: 'Файл не найден' }
+
+    // Удаляем строки данных
+    if (upload.contractId) {
+      await db.delete(megafonReportRows).where(
+        and(eq(megafonReportRows.period, upload.period), eq(megafonReportRows.contractId, upload.contractId))
+      )
+    } else {
+      await db.delete(megafonReportRows).where(eq(megafonReportRows.period, upload.period))
+    }
+
+    // Удаляем запись о файле
+    await db.delete(megafonUploads).where(eq(megafonUploads.id, uploadId))
+
+    logger.info(`[megafon] deleted upload #${uploadId}: ${upload.filename}, period=${upload.period}`)
+    return { deleted: true, filename: upload.filename, period: upload.period }
   },
 
   /** Список загруженных периодов. */

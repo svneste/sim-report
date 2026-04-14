@@ -150,6 +150,18 @@ export const megafonReportRows = pgTable('megafon_report_rows', {
   subIdx:     index('mfr_sub_idx').on(t.period, t.subscriberId),
 }))
 
+/**
+ * Метаданные загруженных файлов МегаФон.
+ */
+export const megafonUploads = pgTable('megafon_uploads', {
+  id:          bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  filename:    text('filename').notNull(),
+  period:      integer('period').notNull(),
+  contractId:  text('contract_id'),
+  rowCount:    integer('row_count').notNull(),
+  uploadedAt:  timestamp('uploaded_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
 export type AmocrmUser     = typeof amocrmUsers.$inferSelect
 export type AmocrmDeal     = typeof amocrmDeals.$inferSelect
 export type SimRegistration = typeof simRegistrations.$inferSelect
