@@ -15,6 +15,7 @@ const dealsQuerySchema = z.object({
 const monthlyDynamicsQuerySchema = z.object({
   months:     z.coerce.number().int().min(1).max(60).default(12),
   numberType: z.enum(['all', 'mnp', 'new']).default('all'),
+  groupBy:    z.enum(['created', 'fact']).default('created'),
 })
 
 export const simReportRoutes: FastifyPluginAsync = async (app) => {
@@ -70,7 +71,7 @@ export const simReportRoutes: FastifyPluginAsync = async (app) => {
       reply.code(400)
       return { error: 'invalid query', details: parsed.error.flatten() }
     }
-    const points = await simReportService.getMonthlyDynamics(parsed.data.months, parsed.data.numberType)
+    const points = await simReportService.getMonthlyDynamics(parsed.data.months, parsed.data.numberType, parsed.data.groupBy)
     return { points }
   })
 }

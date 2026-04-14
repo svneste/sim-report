@@ -316,7 +316,7 @@ export const simReportService = {
    * сейчас перешла в потерянную (143), не попадёт в "qualified". Для
    * текущей воронки это допустимо.
    */
-  async getMonthlyDynamics(monthsBack: number, numberType: NumberType = 'all'): Promise<SimReportMonthlyPoint[]> {
+  async getMonthlyDynamics(monthsBack: number, numberType: NumberType = 'all', groupBy: 'created' | 'fact' = 'created'): Promise<SimReportMonthlyPoint[]> {
     const groups = await getStatusGroups()
     const successIds   = groups.successIds
     const qualifiedIds = groups.qualifiedIds
@@ -326,6 +326,94 @@ export const simReportService = {
     const start = new Date(today.getFullYear(), today.getMonth() - (monthsBack - 1), 1)
     const startIso = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-01`
 
+    // ─── Режим «fact»: подсчёт по фактическим датам ───
+    // registered — по sim_registrations.registered_on (дата оформления)
+    // activated  — по lead_status_transitions.occurred_at (дата перехода в success)
+    // incoming / qualified — остаются по deal.created_at (дата поступления)
+    if (groupBy === 'fact') {
+      const mnpWhere = mnpFilter(numberType)
+
+      // 1) Оформлено — по registered_on
+      const regRows = await db
+        .select({
+          ym: sql<string>`to_char(${simRegistrations.registeredOn}::timestamp, 'YYYY-MM')`,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(simRegistrations)
+        .innerJoin(amocrmDeals, eq(amocrmDeals.id, simRegistrations.dealId))
+        .where(and(
+          eq(amocrmDeals.pipelineId, config.AMOCRM_PIPELINE_ID),
+          sql`${simRegistrations.registeredOn} >= ${startIso}::date`,
+          ...(mnpWhere ? [mnpWhere] : []),
+        ))
+        .groupBy(sql`to_char(${simRegistrations.registeredOn}::timestamp, 'YYYY-MM')`)
+
+      const regMap = new Map<string, number>()
+      for (const r of regRows) regMap.set(String(r.ym), Number(r.count))
+
+      // 2) Включено — по lead_status_transitions.occurred_at для success-статусов
+      //    Берём только первый переход в success для каждой сделки (DISTINCT ON)
+      const actRows = await db
+        .select({
+          ym: sql<string>`to_char(t.occurred_at AT TIME ZONE 'Europe/Moscow', 'YYYY-MM')`,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(
+          db.select({
+            dealId: leadStatusTransitions.dealId,
+            occurredAt: sql`min(${leadStatusTransitions.occurredAt})`.as('occurred_at'),
+          })
+          .from(leadStatusTransitions)
+          .innerJoin(amocrmDeals, eq(amocrmDeals.id, leadStatusTransitions.dealId))
+          .where(and(
+            inArray(leadStatusTransitions.statusId, successIds.map(Number)),
+            eq(amocrmDeals.pipelineId, config.AMOCRM_PIPELINE_ID),
+            sql`(${leadStatusTransitions.occurredAt} AT TIME ZONE 'Europe/Moscow') >= ${startIso}::timestamp`,
+            ...(mnpWhere ? [mnpWhere] : []),
+          ))
+          .groupBy(leadStatusTransitions.dealId)
+          .as('t')
+        )
+        .groupBy(sql`to_char(t.occurred_at AT TIME ZONE 'Europe/Moscow', 'YYYY-MM')`)
+
+      const actMap = new Map<string, number>()
+      for (const r of actRows) actMap.set(String(r.ym), Number(r.count))
+
+      // 3) Поступившие — по deal.created_at (так же как в 'created' режиме)
+      const incRows = await db
+        .select({
+          ym: sql<string>`to_char(${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow', 'YYYY-MM')`,
+          incoming: sql<number>`count(*)::int`,
+        })
+        .from(amocrmDeals)
+        .where(and(
+          eq(amocrmDeals.pipelineId, config.AMOCRM_PIPELINE_ID),
+          sql`(${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow') >= ${startIso}::timestamp`,
+          ...(mnpWhere ? [mnpWhere] : []),
+        ))
+        .groupBy(sql`to_char(${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow', 'YYYY-MM')`)
+
+      const incMap = new Map<string, number>()
+      for (const r of incRows) incMap.set(String(r.ym), Number(r.incoming))
+
+      const out: SimReportMonthlyPoint[] = []
+      for (let i = 0; i < monthsBack; i++) {
+        const d = new Date(start.getFullYear(), start.getMonth() + i, 1)
+        const y = d.getFullYear()
+        const m = d.getMonth() + 1
+        const key = `${y}-${String(m).padStart(2, '0')}`
+        out.push({
+          year: y, month: m,
+          incoming:   incMap.get(key) ?? 0,
+          qualified:  0, // не применимо в fact-режиме
+          registered: regMap.get(key) ?? 0,
+          activated:  actMap.get(key) ?? 0,
+        })
+      }
+      return out
+    }
+
+    // ─── Режим «created» (по умолчанию): подсчёт по дате поступления сделки ───
     const ym = sql<string>`to_char(${amocrmDeals.createdAt} AT TIME ZONE 'Europe/Moscow', 'YYYY-MM')`
     const mnpWhere = mnpFilter(numberType)
     const baseWhere = and(
@@ -334,27 +422,10 @@ export const simReportService = {
       ...(mnpWhere ? [mnpWhere] : []),
     )
 
-    // Один запрос со всеми тремя метриками — count(*) для incoming,
-    // FILTER (...) для qualified и activated. Это сильно дешевле трёх
-    // отдельных раундтрипов в pg.
-    //
-    // Передаём id-шники как inArray (drizzle сгенерит "IN (1,2,3)") —
-    // прямой `${array}::bigint[]` нельзя, drizzle оборачивает массив
-    // в pg-record и postgres ругается "cannot cast type record to bigint[]".
     const qualifiedIn = inArray(amocrmDeals.statusId, qualifiedIds)
     const successIn   = inArray(amocrmDeals.statusId, successIds)
     const hasSimReg   = sql`${simRegistrations.dealId} IS NOT NULL`
 
-    // Воронка должна быть монотонной: Оформлены ⊆ Квал ⊆ Поступило.
-    // Если считать Квал только по текущему status_id, в неё не попадают
-    // сделки, которые когда-то были на "Клиент ответил"+, оформили sim
-    // и потом ушли в "Закрыто и не реализовано" (143). Поэтому в Квал
-    // дополнительно засчитываем всех, у кого есть запись в sim_registrations
-    // — раз sim уже зарегистрировали, клиент гарантированно был квалом.
-    //
-    // По той же причине Включено = success-статусы ИЛИ sim_registration
-    // У сделок в success полю даты регистрации sim чаще всего стоит,
-    // но иногда нет — без OR теряем строки.
     const rows = await db
       .select({
         ym,
@@ -378,7 +449,6 @@ export const simReportService = {
       })
     }
 
-    // Заполняем все месяцы подряд — даже пустые, чтобы линии шли непрерывно
     const out: SimReportMonthlyPoint[] = []
     for (let i = 0; i < monthsBack; i++) {
       const d = new Date(start.getFullYear(), start.getMonth() + i, 1)

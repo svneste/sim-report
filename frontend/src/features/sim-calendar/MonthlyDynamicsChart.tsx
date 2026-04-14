@@ -10,7 +10,7 @@ import {
   YAxis,
 } from 'recharts'
 import { useTheme } from '../../shared/theme/useTheme'
-import { fetchMonthlyDynamics, type MonthlyPoint, type NumberType } from './api/simReport'
+import { fetchMonthlyDynamics, type MonthlyPoint, type NumberType, type GroupBy } from './api/simReport'
 import { MONTH_NAMES_NOM } from '../../shared/lib/date'
 
 const MONTH_NAMES_SHORT = [
@@ -42,6 +42,11 @@ const NUMBER_TYPE_OPTIONS: { value: NumberType; label: string }[] = [
   { value: 'new', label: 'Новые' },
 ]
 
+const GROUP_BY_OPTIONS: { value: GroupBy; label: string }[] = [
+  { value: 'created', label: 'По заявкам' },
+  { value: 'fact',    label: 'По факту'   },
+]
+
 /**
  * График динамики по месяцам в виде воронки. Показывает три линии:
  * "Поступило" → "Квал. клиенты" → "Включено", чтобы видеть, какая
@@ -56,6 +61,7 @@ export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDyna
   const isDark = theme === 'dark'
 
   const [numberType, setNumberType] = useState<NumberType>('all')
+  const [groupBy, setGroupBy] = useState<GroupBy>('created')
   const [points, setPoints]   = useState<MonthlyPoint[] | null>(null)
   const [error,  setError]    = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -64,12 +70,14 @@ export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDyna
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetchMonthlyDynamics(months, numberType)
+    fetchMonthlyDynamics(months, numberType, groupBy)
       .then(r => { if (!cancelled) setPoints(r.points) })
       .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [months, reloadKey, numberType])
+  }, [months, reloadKey, numberType, groupBy])
+
+  const isFact = groupBy === 'fact'
 
   const data: ChartRow[] = useMemo(() => {
     if (!points) return []
@@ -99,7 +107,27 @@ export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDyna
           Динамика по месяцам
         </div>
         <div className="flex items-center gap-3">
-          {/* Сегментированный контрол MNP / Новые / Все */}
+          {/* По заявкам / По факту */}
+          <div className="flex bg-zinc-100 dark:bg-zinc-800 rounded-lg p-0.5">
+            {GROUP_BY_OPTIONS.map(opt => {
+              const active = groupBy === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setGroupBy(opt.value)}
+                  className={`px-2.5 h-6 rounded-md text-[11px] font-medium transition-colors ${
+                    active
+                      ? 'bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 shadow-sm'
+                      : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+          {/* MNP / Новые / Все */}
           <div className="flex bg-zinc-100 dark:bg-zinc-800 rounded-lg p-0.5">
             {NUMBER_TYPE_OPTIONS.map(opt => {
               const active = numberType === opt.value
@@ -131,10 +159,12 @@ export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDyna
           <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: colorIncoming }} />
           Поступило
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: colorQualified }} />
-          Квал. клиенты
-        </div>
+        {!isFact && (
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: colorQualified }} />
+            Квал. клиенты
+          </div>
+        )}
         <div className="flex items-center gap-1.5">
           <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: colorRegistered }} />
           Оформлены
@@ -253,16 +283,18 @@ export function MonthlyDynamicsChart({ months = 12, reloadKey = 0 }: MonthlyDyna
                 activeDot={{ r: 4, stroke: isDark ? '#18181b' : '#fff', strokeWidth: 2, fill: colorIncoming }}
                 isAnimationActive={false}
               />
-              {/* Квал клиенты — синяя сплошная */}
-              <Line
-                type="monotone"
-                dataKey="qualified"
-                stroke={colorQualified}
-                strokeWidth={2}
-                dot={false}
-                activeDot={{ r: 4, stroke: isDark ? '#18181b' : '#fff', strokeWidth: 2, fill: colorQualified }}
-                isAnimationActive={false}
-              />
+              {/* Квал клиенты — синяя сплошная (скрыта в режиме «По факту») */}
+              {!isFact && (
+                <Line
+                  type="monotone"
+                  dataKey="qualified"
+                  stroke={colorQualified}
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4, stroke: isDark ? '#18181b' : '#fff', strokeWidth: 2, fill: colorQualified }}
+                  isAnimationActive={false}
+                />
+              )}
               {/* Оформлены — янтарная сплошная (sim-card дата заполнена) */}
               <Line
                 type="monotone"

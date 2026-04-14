@@ -67,8 +67,10 @@ export interface MonthlyPoint {
   activated:  number
 }
 
-export function fetchMonthlyDynamics(months = 12, numberType: NumberType = 'all'): Promise<{ points: MonthlyPoint[] }> {
-  return http<{ points: MonthlyPoint[] }>(`/api/sim-report/monthly?months=${months}&numberType=${numberType}`)
+export type GroupBy = 'created' | 'fact'
+
+export function fetchMonthlyDynamics(months = 12, numberType: NumberType = 'all', groupBy: GroupBy = 'created'): Promise<{ points: MonthlyPoint[] }> {
+  return http<{ points: MonthlyPoint[] }>(`/api/sim-report/monthly?months=${months}&numberType=${numberType}&groupBy=${groupBy}`)
 }
 
 export interface IncomingDealsPayload {
