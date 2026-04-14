@@ -44,7 +44,26 @@ function rub2kop(v: unknown): number | null {
 
 function toDate(v: unknown): Date | null {
   if (v instanceof Date) return v
-  if (typeof v === 'string' || typeof v === 'number') {
+  if (typeof v === 'number') {
+    // Excel serial date: days since 1900-01-01 (with the 1900 leap year bug)
+    if (v > 30000 && v < 100000) {
+      const d = new Date(Date.UTC(1899, 11, 30 + v))
+      return isNaN(d.getTime()) ? null : d
+    }
+    const d = new Date(v)
+    return isNaN(d.getTime()) ? null : d
+  }
+  if (typeof v === 'string') {
+    // DD.MM.YYYY
+    const ddmmyyyy = v.match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
+    if (ddmmyyyy) {
+      return new Date(Number(ddmmyyyy[3]), Number(ddmmyyyy[2]) - 1, Number(ddmmyyyy[1]))
+    }
+    // YYYY-MM-DD
+    const iso = v.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (iso) {
+      return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]))
+    }
     const d = new Date(v)
     return isNaN(d.getTime()) ? null : d
   }
