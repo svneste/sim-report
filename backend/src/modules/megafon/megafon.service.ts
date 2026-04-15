@@ -394,35 +394,67 @@ export const megafonService = {
     }
   },
 
-  /** Динамика вознаграждений по месяцам с разбивкой по договорам (contractId). */
+  /**
+   * Динамика вознаграждений по месяцам с разбивкой по двум договорам.
+   *
+   * Каждый месяц загружаются 2 файла с разными pscs_id, но они принадлежат
+   * одному из двух договоров:
+   *   - «1-01072015/АСМ» — старый договор (активации с 2015 года)
+   *   - «1-01.05.2018/АС/B2B» — новый договор (активации с 2018 года)
+   *
+   * Определяем принадлежность contractId к договору по минимальной дате
+   * активации: если min(activation_date) < 2018-01-01 → договор 2015,
+   * иначе → договор 2018.
+   */
   async getDynamics() {
-    // Вознаграждение по периоду + contractId
-    const rows = await db
+    // 1. Определяем, к какому договору относится каждый contractId
+    const contractMapping = await db
+      .select({
+        contractId: megafonReportRows.contractId,
+        minActivation: sql<string>`min(${megafonReportRows.activationDate})::text`,
+      })
+      .from(megafonReportRows)
+      .groupBy(megafonReportRows.contractId)
+
+    const CONTRACT_2015 = '1-01072015/АСМ'
+    const CONTRACT_2018 = '1-01.05.2018/АС/B2B'
+
+    // contractId → название договора
+    const cidToContract = new Map<string | null, string>()
+    for (const row of contractMapping) {
+      const minDate = row.minActivation ? new Date(row.minActivation) : null
+      const isOld = minDate && minDate.getFullYear() < 2018
+      cidToContract.set(row.contractId, isOld ? CONTRACT_2015 : CONTRACT_2018)
+    }
+
+    // 2. Сырые данные по периоду + contractId
+    const rawRows = await db
       .select({
         period: megafonReportRows.period,
         contractId: megafonReportRows.contractId,
-        agent: sql<string>`max(${megafonReportRows.agent})`,
-        subscribers: sql<number>`count(*)::int`,
-        activated: sql<number>`count(*) FILTER (WHERE
-          extract(year from ${megafonReportRows.registrationDate})::int * 100
-          + extract(month from ${megafonReportRows.registrationDate})::int
-          = ${megafonReportRows.period})::int`,
         chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::int`,
         rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::int`,
       })
       .from(megafonReportRows)
       .groupBy(megafonReportRows.period, megafonReportRows.contractId)
-      .orderBy(megafonReportRows.period, megafonReportRows.contractId)
+      .orderBy(megafonReportRows.period)
 
-    // Уникальные договоры с названиями контрагентов
-    const contracts = await db
-      .select({
-        contractId: megafonReportRows.contractId,
-        agent: sql<string>`max(${megafonReportRows.agent})`,
-      })
-      .from(megafonReportRows)
-      .groupBy(megafonReportRows.contractId)
-      .orderBy(megafonReportRows.contractId)
+    // 3. Агрегируем по периоду + название договора
+    const grouped = new Map<string, { period: number; contract: string; chargesMonth: number; rewardMonth: number }>()
+    for (const r of rawRows) {
+      const contract = cidToContract.get(r.contractId) ?? CONTRACT_2015
+      const key = `${r.period}_${contract}`
+      const existing = grouped.get(key)
+      if (existing) {
+        existing.chargesMonth += r.chargesMonth
+        existing.rewardMonth += r.rewardMonth
+      } else {
+        grouped.set(key, { period: r.period, contract, chargesMonth: r.chargesMonth, rewardMonth: r.rewardMonth })
+      }
+    }
+
+    const rows = Array.from(grouped.values()).sort((a, b) => a.period - b.period || a.contract.localeCompare(b.contract))
+    const contracts = [CONTRACT_2015, CONTRACT_2018]
 
     return { rows, contracts }
   },

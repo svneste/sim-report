@@ -82,24 +82,16 @@ export async function fetchMegafonPeriods(): Promise<PeriodInfo[]> {
   return res.json()
 }
 
-export interface DynamicsContract {
-  contractId: string | null
-  agent: string
-}
-
 export interface DynamicsRow {
   period: number
-  contractId: string | null
-  agent: string
-  subscribers: number
-  activated: number
+  contract: string
   chargesMonth: number
   rewardMonth: number
 }
 
 export interface MegafonDynamics {
   rows: DynamicsRow[]
-  contracts: DynamicsContract[]
+  contracts: string[]
 }
 
 export async function fetchMegafonDynamics(): Promise<MegafonDynamics> {

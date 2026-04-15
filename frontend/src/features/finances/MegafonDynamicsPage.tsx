@@ -80,21 +80,14 @@ export function MegafonDynamicsPage() {
   useEffect(() => { void load() }, [load])
 
   // Преобразуем данные в формат для Recharts
-  const { chartRows, contractKeys, contractLabels } = useMemo(() => {
-    if (!data) return { chartRows: [], contractKeys: [], contractLabels: {} as Record<string, string> }
+  const { chartRows, contractKeys } = useMemo(() => {
+    if (!data) return { chartRows: [], contractKeys: [] as string[] }
 
-    // Определяем названия договоров
-    const labels: Record<string, string> = {}
-    for (const c of data.contracts) {
-      const id = c.contractId ?? 'unknown'
-      labels[id] = c.agent || `Договор ${id}`
-    }
-    const keys = data.contracts.map(c => c.contractId ?? 'unknown')
+    const keys = data.contracts
 
     // Собираем данные по периодам
     const byPeriod = new Map<number, ChartRow>()
     for (const row of data.rows) {
-      const cid = row.contractId ?? 'unknown'
       let entry = byPeriod.get(row.period)
       if (!entry) {
         entry = {
@@ -106,7 +99,7 @@ export function MegafonDynamicsPage() {
         byPeriod.set(row.period, entry)
       }
       const reward = row.rewardMonth / 100 // копейки → рубли
-      entry[`contract_${cid}`] = reward
+      entry[`contract_${row.contract}`] = reward
       entry.total = (entry.total as number) + reward
     }
 
@@ -119,7 +112,7 @@ export function MegafonDynamicsPage() {
       }
     }
 
-    return { chartRows: rows, contractKeys: keys, contractLabels: labels }
+    return { chartRows: rows, contractKeys: keys }
   }, [data])
 
   const colorTotal = '#10b981'
@@ -160,7 +153,7 @@ export function MegafonDynamicsPage() {
                   className="inline-block w-3 h-[2px] rounded-full"
                   style={{ background: CONTRACT_COLORS[i % CONTRACT_COLORS.length] }}
                 />
-                {contractLabels[k]}
+                {k}
               </div>
             ))}
             <div className="flex items-center gap-1.5">
@@ -224,8 +217,7 @@ export function MegafonDynamicsPage() {
                       const name = String(_name)
                       let label = 'Итого'
                       if (name.startsWith('contract_')) {
-                        const cid = name.replace('contract_', '')
-                        label = contractLabels[cid] ?? cid
+                        label = name.replace('contract_', '')
                       }
                       return [fmtRub(v), label]
                     }}
@@ -275,7 +267,7 @@ export function MegafonDynamicsPage() {
                       </th>
                       {contractKeys.map((k, i) => (
                         <th key={k} className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium h-10 whitespace-nowrap" style={{ color: CONTRACT_COLORS[i % CONTRACT_COLORS.length] }}>
-                          {contractLabels[k]}
+                          {k}
                         </th>
                       ))}
                       <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-emerald-600 dark:text-emerald-400 h-10">
