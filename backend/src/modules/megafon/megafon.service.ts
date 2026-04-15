@@ -407,11 +407,14 @@ export const megafonService = {
    * иначе → договор 2018.
    */
   async getDynamics() {
-    // 1. Определяем, к какому договору относится каждый contractId
+    // 1. Определяем, к какому договору относится каждый contractId.
+    //    Различаем по именам контрагентов внутри файла:
+    //    - Договор 2015: агент содержит кириллическую «В2В»
+    //    - Договор 2018: агент содержит латинскую «b2b» / «FF» / «fix»
     const contractMapping = await db
       .select({
         contractId: megafonReportRows.contractId,
-        minActivation: sql<string>`min(${megafonReportRows.activationDate})::text`,
+        agents: sql<string>`string_agg(distinct ${megafonReportRows.agent}, '||')`,
       })
       .from(megafonReportRows)
       .groupBy(megafonReportRows.contractId)
@@ -422,9 +425,11 @@ export const megafonService = {
     // contractId → название договора
     const cidToContract = new Map<string | null, string>()
     for (const row of contractMapping) {
-      const minDate = row.minActivation ? new Date(row.minActivation) : null
-      const isOld = minDate && minDate.getFullYear() < 2018
-      cidToContract.set(row.contractId, isOld ? CONTRACT_2015 : CONTRACT_2018)
+      const agents = (row.agents ?? '').toLowerCase()
+      // Договор 2018 — агенты содержат латинские «b2b», «ff», «fix»
+      // Договор 2015 — агенты содержат кириллическую «в2в» (без латинских маркеров)
+      const is2018 = /\bb2b\b/.test(agents) || /\bff\b/.test(agents) || /\bfix\b/.test(agents)
+      cidToContract.set(row.contractId, is2018 ? CONTRACT_2018 : CONTRACT_2015)
     }
 
     // 2. Сырые данные по периоду + contractId
