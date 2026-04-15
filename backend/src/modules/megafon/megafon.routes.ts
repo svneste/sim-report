@@ -55,6 +55,14 @@ export const megafonRoutes: FastifyPluginAsync = async (app) => {
   })
 
   /**
+   * GET /api/megafon/dynamics
+   * Динамика вознаграждений по месяцам с разбивкой по договорам.
+   */
+  app.get('/api/megafon/dynamics', async () => {
+    return megafonService.getDynamics()
+  })
+
+  /**
    * GET /api/megafon/report?period=202603
    * Агрегированный отчёт. Без period — по всем данным.
    */

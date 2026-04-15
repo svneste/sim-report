@@ -317,11 +317,27 @@ export const megafonService = {
       + extract(month from ${megafonReportRows.registrationDate})::int
       = ${megafonReportRows.period})::int`
 
+    // Если «Все периоды» — абонентов считаем только из последнего периода,
+    // т.к. одни и те же номера повторяются каждый месяц.
+    // Начисления, вознаграждения, подключения — суммируем за все периоды.
+    let latestPeriod: number | null = null
+    if (!period) {
+      const [row] = await db
+        .select({ period: sql<number>`max(${megafonReportRows.period})` })
+        .from(megafonReportRows)
+      latestPeriod = row?.period ?? null
+    }
+
+    // Выражение для абонентов: при «Все периоды» считаем только из последнего
+    const subscribersExpr = latestPeriod
+      ? sql<number>`count(*) FILTER (WHERE ${megafonReportRows.period} = ${latestPeriod})::int`
+      : sql<number>`count(*)::int`
+
     // По сегментам
     const bySegment = await db
       .select({
         segment: megafonReportRows.segment,
-        subscribers: sql<number>`count(*)::int`,
+        subscribers: subscribersExpr,
         activated: activatedExpr,
         chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::int`,
         rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::int`,
@@ -335,7 +351,7 @@ export const megafonService = {
     const byAgent = await db
       .select({
         agent: megafonReportRows.agent,
-        subscribers: sql<number>`count(*)::int`,
+        subscribers: subscribersExpr,
         activated: activatedExpr,
         chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::int`,
         rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::int`,
@@ -362,7 +378,7 @@ export const megafonService = {
     // Итого
     const totals = await db
       .select({
-        subscribers: sql<number>`count(*)::int`,
+        subscribers: subscribersExpr,
         activated: activatedExpr,
         chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::int`,
         rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::int`,
@@ -376,5 +392,38 @@ export const megafonService = {
       byAgent,
       byPeriod,
     }
+  },
+
+  /** Динамика вознаграждений по месяцам с разбивкой по договорам (contractId). */
+  async getDynamics() {
+    // Вознаграждение по периоду + contractId
+    const rows = await db
+      .select({
+        period: megafonReportRows.period,
+        contractId: megafonReportRows.contractId,
+        agent: sql<string>`max(${megafonReportRows.agent})`,
+        subscribers: sql<number>`count(*)::int`,
+        activated: sql<number>`count(*) FILTER (WHERE
+          extract(year from ${megafonReportRows.registrationDate})::int * 100
+          + extract(month from ${megafonReportRows.registrationDate})::int
+          = ${megafonReportRows.period})::int`,
+        chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::int`,
+        rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::int`,
+      })
+      .from(megafonReportRows)
+      .groupBy(megafonReportRows.period, megafonReportRows.contractId)
+      .orderBy(megafonReportRows.period, megafonReportRows.contractId)
+
+    // Уникальные договоры с названиями контрагентов
+    const contracts = await db
+      .select({
+        contractId: megafonReportRows.contractId,
+        agent: sql<string>`max(${megafonReportRows.agent})`,
+      })
+      .from(megafonReportRows)
+      .groupBy(megafonReportRows.contractId)
+      .orderBy(megafonReportRows.contractId)
+
+    return { rows, contracts }
   },
 }

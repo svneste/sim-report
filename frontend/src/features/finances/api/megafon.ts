@@ -82,6 +82,36 @@ export async function fetchMegafonPeriods(): Promise<PeriodInfo[]> {
   return res.json()
 }
 
+export interface DynamicsContract {
+  contractId: string | null
+  agent: string
+}
+
+export interface DynamicsRow {
+  period: number
+  contractId: string | null
+  agent: string
+  subscribers: number
+  activated: number
+  chargesMonth: number
+  rewardMonth: number
+}
+
+export interface MegafonDynamics {
+  rows: DynamicsRow[]
+  contracts: DynamicsContract[]
+}
+
+export async function fetchMegafonDynamics(): Promise<MegafonDynamics> {
+  const headers: Record<string, string> = {}
+  const token = getB24Token()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${BASE}/api/megafon/dynamics`, { headers })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
 export async function fetchMegafonReport(period?: number): Promise<MegafonReport> {
   const headers: Record<string, string> = {}
   const token = getB24Token()

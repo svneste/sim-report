@@ -3,12 +3,13 @@ import { SimCalendarPage } from '../features/sim-calendar/SimCalendarPage'
 import { AssociationsReportPage } from '../features/associations-report/AssociationsReportPage'
 import { AssociationsYearPage } from '../features/associations-report/AssociationsYearPage'
 import { FinancesMegafonPage } from '../features/finances/FinancesMegafonPage'
+import { MegafonDynamicsPage } from '../features/finances/MegafonDynamicsPage'
 import { FinancesCrmPage } from '../features/finances/FinancesCrmPage'
 import { ThemeToggle } from '../shared/theme/ThemeToggle'
 import { Bx24Guard } from './Bx24Guard'
 import { useCurrentUser } from '../shared/hooks/useCurrentUser'
 
-type Tab = 'sim' | 'associations-day' | 'associations-year' | 'finances-megafon' | 'finances-crm'
+type Tab = 'sim' | 'associations-day' | 'associations-year' | 'finances-megafon' | 'finances-megafon-dynamics' | 'finances-crm'
 
 /**
  * Корневой роутинг. Простые табы — без react-router, чтобы не тащить
@@ -27,7 +28,7 @@ export function App() {
   const currentUser = useCurrentUser()
 
   const assocActive = tab === 'associations-day' || tab === 'associations-year'
-  const finActive = tab === 'finances-megafon' || tab === 'finances-crm'
+  const finActive = tab === 'finances-megafon' || tab === 'finances-megafon-dynamics' || tab === 'finances-crm'
   const isNesterovich = currentUser?.LAST_NAME === 'Нестерович' && currentUser?.NAME === 'Сергей'
 
   return (
@@ -154,6 +155,17 @@ export function App() {
                         </button>
                         <button
                           type="button"
+                          onClick={() => { setTab('finances-megafon-dynamics'); setFinOpen(false) }}
+                          className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                            tab === 'finances-megafon-dynamics'
+                              ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100'
+                              : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/60'
+                          }`}
+                        >
+                          МегаФон · Динамика
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => { setTab('finances-crm'); setFinOpen(false) }}
                           className={`w-full text-left px-3 py-2 text-sm transition-colors ${
                             tab === 'finances-crm'
@@ -179,8 +191,9 @@ export function App() {
         {tab === 'sim'               && <SimCalendarPage />}
         {tab === 'associations-day'  && <AssociationsReportPage />}
         {tab === 'associations-year' && <AssociationsYearPage />}
-        {tab === 'finances-megafon'  && <FinancesMegafonPage />}
-        {tab === 'finances-crm'      && <FinancesCrmPage />}
+        {tab === 'finances-megafon'           && <FinancesMegafonPage />}
+        {tab === 'finances-megafon-dynamics' && <MegafonDynamicsPage />}
+        {tab === 'finances-crm'              && <FinancesCrmPage />}
       </main>
     </div>
     </Bx24Guard>

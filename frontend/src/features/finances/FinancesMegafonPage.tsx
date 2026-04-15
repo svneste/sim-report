@@ -233,7 +233,7 @@ export function FinancesMegafonPage() {
       {!loading && report && (
         <>
           {/* KPI */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
             <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-4 shadow-sm">
               <div className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-2">Абонентов</div>
               <div className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
@@ -256,6 +256,14 @@ export function FinancesMegafonPage() {
               <div className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-2">Вознаграждение</div>
               <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
                 {fmt(report.totals.rewardMonth)} <span className="text-sm font-normal opacity-60">&#8381;</span>
+              </div>
+            </div>
+            <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-4 shadow-sm">
+              <div className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-2">% вознаграждения</div>
+              <div className="text-xl font-bold text-amber-600 dark:text-amber-400">
+                {report.totals.chargesMonth > 0
+                  ? (report.totals.rewardMonth / report.totals.chargesMonth * 100).toLocaleString('ru-RU', { maximumFractionDigits: 2 })
+                  : '—'}<span className="text-sm font-normal opacity-60"> %</span>
               </div>
             </div>
           </div>
