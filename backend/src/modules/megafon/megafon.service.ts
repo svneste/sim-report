@@ -29,10 +29,16 @@ interface ParsedRow {
   rewardMonth:      number | null
 }
 
-/** Извлекает contract ID из имени файла (pscs_id_XXXXXXX). */
+/** Извлекает contract ID из имени файла.
+ *  «1.xlsx» → «1», «2.xlsx» → «2», «pscs_id_123.xlsx» → «123». */
 function extractContractId(filename: string): string | null {
-  const m = filename.match(/pscs_id_(\d+)/)
-  return m ? m[1] : null
+  // Убираем расширение, берём имя файла без пути
+  const stem = filename.replace(/\.[^.]+$/, '').replace(/^.*[\\/]/, '')
+  // Ищем pscs_id_XXXXX или просто первое число в имени
+  const pscs = stem.match(/pscs_id_(\d+)/)
+  if (pscs) return pscs[1]
+  const num = stem.match(/(\d+)/)
+  return num ? num[1] : null
 }
 
 /** Конвертирует рубли (float) в копейки (int). */
@@ -407,30 +413,19 @@ export const megafonService = {
    * иначе → договор 2018.
    */
   async getDynamics() {
-    // 1. Определяем, к какому договору относится каждый contractId.
-    //    Различаем по именам контрагентов внутри файла:
-    //    - Договор 2015: агент содержит кириллическую «В2В»
-    //    - Договор 2018: агент содержит латинскую «b2b» / «FF» / «fix»
-    const contractMapping = await db
-      .select({
-        contractId: megafonReportRows.contractId,
-        agents: sql<string>`string_agg(distinct ${megafonReportRows.agent}, '||')`,
-      })
-      .from(megafonReportRows)
-      .groupBy(megafonReportRows.contractId)
-
+    // 1. Маппинг contractId → название договора.
+    //    Файл «1.xlsx» → contractId «1» → договор 2015
+    //    Файл «2.xlsx» → contractId «2» → договор 2018
     const CONTRACT_2015 = '1-01072015/АСМ'
     const CONTRACT_2018 = '1-01.05.2018/АС/B2B'
 
-    // contractId → название договора
-    const cidToContract = new Map<string | null, string>()
-    for (const row of contractMapping) {
-      const agents = (row.agents ?? '').toLowerCase()
-      // Договор 2018 — агенты содержат латинские «b2b», «ff», «fix»
-      // Договор 2015 — агенты содержат кириллическую «в2в» (без латинских маркеров)
-      const is2018 = /\bb2b\b/.test(agents) || /\bff\b/.test(agents) || /\bfix\b/.test(agents)
-      cidToContract.set(row.contractId, is2018 ? CONTRACT_2018 : CONTRACT_2015)
+    const CONTRACT_MAP: Record<string, string> = {
+      '1': CONTRACT_2015,
+      '2': CONTRACT_2018,
     }
+
+    const mapContract = (cid: string | null) =>
+      CONTRACT_MAP[cid ?? ''] ?? `Договор ${cid ?? '?'}`
 
     // 2. Сырые данные по периоду + contractId
     const rawRows = await db
@@ -447,7 +442,7 @@ export const megafonService = {
     // 3. Агрегируем по периоду + название договора
     const grouped = new Map<string, { period: number; contract: string; chargesMonth: number; rewardMonth: number }>()
     for (const r of rawRows) {
-      const contract = cidToContract.get(r.contractId) ?? CONTRACT_2015
+      const contract = mapContract(r.contractId)
       const key = `${r.period}_${contract}`
       const existing = grouped.get(key)
       if (existing) {
