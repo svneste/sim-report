@@ -37,6 +37,23 @@ function periodFullLabel(p: number) {
   return `${MONTH_FULL[m] ?? m} ${y}`
 }
 
+// Сдвиг периода YYYYMM на delta месяцев
+function addMonths(period: number, delta: number): number {
+  const y = Math.floor(period / 100)
+  const m = period % 100
+  const idx = y * 12 + (m - 1) + delta
+  return Math.floor(idx / 12) * 100 + (idx % 12) + 1
+}
+
+// Текущий период YYYYMM по локальной дате
+function currentPeriod(): number {
+  const d = new Date()
+  return d.getFullYear() * 100 + (d.getMonth() + 1)
+}
+
+// Окно графика — скользящие 12 месяцев (год)
+const WINDOW_MONTHS = 12
+
 const fmtK = (v: number) => {
   if (Math.abs(v) >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`
   if (Math.abs(v) >= 1_000) return `${Math.round(v / 1_000)}K`
@@ -54,8 +71,8 @@ interface ChartRow {
   period: number
   label: string
   fullLabel: string
-  total: number
-  [key: string]: string | number // dynamic contract keys
+  total: number | null
+  [key: string]: string | number | null // dynamic contract keys (null = месяц без данных)
 }
 
 export function MegafonDynamicsPage() {
@@ -89,37 +106,43 @@ export function MegafonDynamicsPage() {
 
   useEffect(() => { void load() }, [load])
 
-  // Преобразуем данные в формат для Recharts
+  // Преобразуем данные в окно из 12 месяцев (пустые месяцы — null, чтобы линия
+  // рвалась, а не падала в ноль; ось при этом показывает весь год-«каркас»).
   const { chartRows, contractKeys } = useMemo(() => {
-    if (!data) return { chartRows: [], contractKeys: [] as MegafonDynamics['contracts'] }
+    if (!data) return { chartRows: [] as ChartRow[], contractKeys: [] as MegafonDynamics['contracts'] }
 
     const keys = data.contracts
 
-    // Собираем данные по периодам
-    const byPeriod = new Map<number, ChartRow>()
+    // Агрегаты по периодам
+    const byPeriod = new Map<number, { total: number; contracts: Record<string, number> }>()
     for (const row of data.rows) {
-      let entry = byPeriod.get(row.period)
-      if (!entry) {
-        entry = {
-          period: row.period,
-          label: periodLabel(row.period),
-          fullLabel: periodFullLabel(row.period),
-          total: 0,
-        }
-        byPeriod.set(row.period, entry)
-      }
+      let e = byPeriod.get(row.period)
+      if (!e) { e = { total: 0, contracts: {} }; byPeriod.set(row.period, e) }
       const reward = row.rewardMonth / 100 // копейки → рубли
-      entry[`contract_${row.key}`] = reward
-      entry.total = (entry.total as number) + reward
+      e.contracts[row.key] = (e.contracts[row.key] ?? 0) + reward
+      e.total += reward
     }
 
-    const rows = Array.from(byPeriod.values()).sort((a, b) => a.period - b.period)
+    // Окно заканчивается на текущем месяце (или на последнем месяце с данными,
+    // если он почему-то позже), длиной WINDOW_MONTHS назад.
+    const withData = Array.from(byPeriod.keys())
+    const latest = withData.length ? Math.max(...withData) : currentPeriod()
+    const end = Math.max(currentPeriod(), latest)
+    const start = addMonths(end, -(WINDOW_MONTHS - 1))
 
-    // Заполняем нулями пропущенные договоры
-    for (const row of rows) {
-      for (const k of keys) {
-        if (row[`contract_${k.key}`] === undefined) row[`contract_${k.key}`] = 0
+    const rows: ChartRow[] = []
+    for (let p = start; p <= end; p = addMonths(p, 1)) {
+      const e = byPeriod.get(p)
+      const row: ChartRow = {
+        period: p,
+        label: periodLabel(p),
+        fullLabel: periodFullLabel(p),
+        total: e ? e.total : null,
       }
+      for (const k of keys) {
+        row[`contract_${k.key}`] = e ? (e.contracts[k.key] ?? 0) : null
+      }
+      rows.push(row)
     }
 
     return { chartRows: rows, contractKeys: keys }
@@ -129,7 +152,7 @@ export function MegafonDynamicsPage() {
   const colorAxis = isDark ? '#71717a' : '#a1a1aa'
   const colorGrid = isDark ? '#27272a' : '#f0f0f1'
 
-  const hasData = chartRows.length > 0
+  const hasData = (data?.rows.length ?? 0) > 0
 
   // Описание всех серий (договоры + Итого) в одном массиве — для легенды и линий
   const series = useMemo(() => {
@@ -143,14 +166,8 @@ export function MegafonDynamicsPage() {
     return arr
   }, [contractKeys, colorTotal])
 
-  // KPI: последнее «Итого» и рост к предыдущему месяцу
-  const last = chartRows[chartRows.length - 1]
-  const prev = chartRows[chartRows.length - 2]
-  const latestTotal = last ? Number(last.total) : 0
-  const deltaPct =
-    last && prev && Number(prev.total) > 0
-      ? ((Number(last.total) - Number(prev.total)) / Number(prev.total)) * 100
-      : null
+  // Для таблицы — только месяцы с данными (без пустого «каркаса» графика)
+  const tableRows = useMemo(() => chartRows.filter(r => r.total != null), [chartRows])
 
   return (
     <div>
@@ -176,54 +193,29 @@ export function MegafonDynamicsPage() {
         <>
           {/* Карточка графика */}
           <div className="border border-zinc-200 dark:border-zinc-800/80 rounded-2xl bg-gradient-to-b from-white to-zinc-50/60 dark:from-zinc-900 dark:to-zinc-950/40 shadow-sm overflow-hidden">
-            {/* Шапка: KPI слева + интерактивная легенда справа */}
-            <div className="flex items-start justify-between gap-4 flex-wrap px-5 pt-5 pb-1">
-              <div>
-                <div className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">
-                  Вознаграждение{last ? ` · ${(last as ChartRow).fullLabel}` : ''}
-                </div>
-                <div className="mt-1 flex items-baseline gap-2.5">
-                  <span className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 tabular-nums">
-                    {fmtRub(latestTotal)}
-                  </span>
-                  {deltaPct !== null && (
-                    <span
-                      className={`inline-flex items-center gap-0.5 text-[12px] font-semibold px-1.5 py-0.5 rounded-md ${
-                        deltaPct >= 0
-                          ? 'text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-500/10'
-                          : 'text-red-600 bg-red-50 dark:text-red-400 dark:bg-red-500/10'
-                      }`}
-                    >
-                      {deltaPct >= 0 ? '▲' : '▼'} {Math.abs(deltaPct).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Легенда-чипы (клик — скрыть/показать серию) */}
-              <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                {series.map(s => {
-                  const off = hidden.has(s.id)
-                  return (
-                    <button
-                      key={s.id}
-                      onClick={() => toggleSeries(s.id)}
-                      className={`group flex items-center gap-1.5 pl-2 pr-2.5 h-7 rounded-full border text-[12px] font-medium transition-colors ${
-                        off
-                          ? 'border-zinc-200 dark:border-zinc-800 text-zinc-400 dark:text-zinc-600'
-                          : 'border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100/70 dark:hover:bg-zinc-800/60'
-                      }`}
-                      title={off ? 'Показать' : 'Скрыть'}
-                    >
-                      <span
-                        className="inline-block w-2.5 h-2.5 rounded-full transition-opacity"
-                        style={{ background: s.color, opacity: off ? 0.25 : 1 }}
-                      />
-                      <span className={off ? 'line-through' : ''}>{s.label}</span>
-                    </button>
-                  )
-                })}
-              </div>
+            {/* Минималистичная легенда сверху (клик — скрыть/показать серию) */}
+            <div className="flex items-center gap-x-5 gap-y-2 flex-wrap px-5 pt-4 pb-1">
+              {series.map(s => {
+                const off = hidden.has(s.id)
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => toggleSeries(s.id)}
+                    title={off ? 'Показать' : 'Скрыть'}
+                    className={`flex items-center gap-2 text-[12px] transition-opacity ${
+                      off ? 'opacity-40 text-zinc-400 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200'
+                    }`}
+                  >
+                    {/* Маркер-линия: пунктир для «Итого», сплошная для договоров */}
+                    {s.hero ? (
+                      <span className="inline-block w-4 border-t-[2px] border-dashed" style={{ borderColor: s.color }} />
+                    ) : (
+                      <span className="inline-block w-4 h-[2px] rounded-full" style={{ background: s.color }} />
+                    )}
+                    <span className={off ? 'line-through' : ''}>{s.label}</span>
+                  </button>
+                )
+              })}
             </div>
 
             {/* График */}
@@ -243,8 +235,9 @@ export function MegafonDynamicsPage() {
                   <XAxis
                     dataKey="label"
                     interval={0}
-                    padding={{ left: 18, right: 18 }}
-                    tick={{ fill: colorAxis, fontSize: 11 }}
+                    minTickGap={0}
+                    padding={{ left: 12, right: 12 }}
+                    tick={{ fill: colorAxis, fontSize: 10 }}
                     tickMargin={12}
                     tickLine={false}
                     axisLine={false}
@@ -264,14 +257,16 @@ export function MegafonDynamicsPage() {
                     content={<ChartTooltip isDark={isDark} series={series} />}
                   />
 
-                  {/* Итого — герой: сплошная зелёная с насыщенной заливкой (рисуем первой, под линиями) */}
+                  {/* Итого — огибающая: пунктирная зелёная с мягкой заливкой (рисуем первой, под линиями) */}
                   <Area
                     type="monotone"
                     dataKey="total"
                     name="Итого"
                     hide={hidden.has('total')}
+                    connectNulls={false}
                     stroke={colorTotal}
-                    strokeWidth={2.5}
+                    strokeWidth={2}
+                    strokeDasharray="6 4"
                     strokeLinecap="round"
                     fill="url(#meg-total-grad)"
                     dot={false}
@@ -279,7 +274,7 @@ export function MegafonDynamicsPage() {
                     isAnimationActive={false}
                   />
 
-                  {/* Линии по договорам — тонкие, без статичных точек */}
+                  {/* Линии по договорам — сплошные, с аккуратными точками на узлах */}
                   {contractKeys.map((k, i) => (
                     <Line
                       key={k.key}
@@ -287,10 +282,11 @@ export function MegafonDynamicsPage() {
                       type="monotone"
                       dataKey={`contract_${k.key}`}
                       hide={hidden.has(`contract_${k.key}`)}
+                      connectNulls={false}
                       stroke={CONTRACT_COLORS[i % CONTRACT_COLORS.length]}
                       strokeWidth={2}
                       strokeLinecap="round"
-                      dot={false}
+                      dot={{ r: 2.5, fill: CONTRACT_COLORS[i % CONTRACT_COLORS.length], strokeWidth: 0 }}
                       activeDot={{ r: 4.5, stroke: isDark ? '#0a0a0a' : '#fff', strokeWidth: 2, fill: CONTRACT_COLORS[i % CONTRACT_COLORS.length] }}
                       isAnimationActive={false}
                     />
@@ -322,7 +318,7 @@ export function MegafonDynamicsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {chartRows.map(row => (
+                    {tableRows.map(row => (
                       <tr key={row.period} className="border-b border-zinc-200 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-800/40 group">
                         <td className="sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/40 border-r border-zinc-200 dark:border-zinc-800 px-4 transition-colors">
                           <div className="h-[36px] flex items-center text-[13px] text-zinc-900 dark:text-zinc-100">
@@ -349,7 +345,7 @@ export function MegafonDynamicsPage() {
                         <div className="h-[36px] flex items-center text-[12px] font-semibold text-zinc-500 dark:text-zinc-400">Итого</div>
                       </td>
                       {contractKeys.map(k => {
-                        const sum = chartRows.reduce((s, r) => s + Number(r[`contract_${k.key}`] ?? 0), 0)
+                        const sum = tableRows.reduce((s, r) => s + Number(r[`contract_${k.key}`] ?? 0), 0)
                         return (
                           <td key={k.key} className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
                             <div className="h-[36px] flex items-center justify-end text-[12px] font-bold text-zinc-900 dark:text-zinc-100">
@@ -360,7 +356,7 @@ export function MegafonDynamicsPage() {
                       })}
                       <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
                         <div className="h-[36px] flex items-center justify-end text-[12px] font-bold text-emerald-600 dark:text-emerald-400">
-                          {fmtRub(chartRows.reduce((s, r) => s + (r.total as number), 0))}
+                          {fmtRub(tableRows.reduce((s, r) => s + Number(r.total ?? 0), 0))}
                         </div>
                       </td>
                     </tr>
@@ -400,11 +396,13 @@ function ChartTooltip({
   const row = payload[0]?.payload
   if (!row) return null
 
-  // Только видимые серии, герой (Итого) — первым
+  // Только видимые серии с непустым значением, герой (Итого) — первым
   const visible = new Set(payload.map(p => String(p.dataKey)))
   const items = series
-    .filter(s => visible.has(s.id))
+    .filter(s => visible.has(s.id) && row[s.id] != null)
     .sort((a, b) => Number(b.hero) - Number(a.hero))
+
+  if (items.length === 0) return null
 
   return (
     <div
