@@ -29,24 +29,35 @@ interface ParsedRow {
   rewardMonth:      number | null
 }
 
-/** Определяет договор по имени файла → стабильный contractId «1» или «2».
- *  Распознаёт реальные имена выгрузок МегаФона и короткие «1.xlsx»/«2.xlsx».
+/** Относит строку к договору по «Имя схемы» (поле внутри файла):
+ *    схема содержит «Унификация»/«B2B» → договор «1» (1-01072015/АСМ);
+ *    прочее (B2X, Фикс, …)            → договор «2» (1-01.05.2018/АС/B2B).
+ *  Это даёт чистое разделение 100%/0% (проверено на выгрузках), в отличие от
+ *  «Контрагента»/«Точки продаж», которые внутри файла перемешаны. */
+function schemeVotesContract1(scheme: string | null): boolean {
+  if (!scheme) return false
+  const s = scheme.toLowerCase()
+  return s.includes('унификац') || s.includes('b2b')
+}
+
+/** Запасное определение договора по имени файла (если по данным не вышло).
+ *  Распознаёт помесячные имена и короткие «1.xlsx»/«2.xlsx».
  *  Примеры:
  *    «Договор № 1-01072015:АСМ.xlsx»      → «1» (договор 1-01072015/АСМ)
  *    «Договор № 1-01.05.2018:АС:B2B.xlsx» → «2» (договор 1-01.05.2018/АС/B2B)
- *    «1.xlsx» → «1», «2.xlsx» → «2», «pscs_id_123.xlsx» → «123». */
+ *    «1.xlsx» → «1», «2.xlsx» → «2», «...pscs_id_123.xlsx» → «123». */
 function extractContractId(filename: string): string | null {
   // Убираем расширение, берём имя файла без пути
   const stem = filename.replace(/\.[^.]+$/, '').replace(/^.*[\\/]/, '')
-
-  // pscs_id_XXXXX — явный идентификатор
-  const pscs = stem.match(/pscs_id_(\d+)/)
-  if (pscs) return pscs[1]
 
   // Маркеры договоров в имени файла (проверяем ДО общего числа,
   // т.к. имена «Договор № 1-...» начинаются с цифры 1 для обоих договоров)
   if (/2015|АСМ/i.test(stem)) return '1'           // договор 1-01072015/АСМ
   if (/2018|B2B/i.test(stem)) return '2'           // договор 1-01.05.2018/АС/B2B
+
+  // pscs_id_XXXXX — явный идентификатор точки продаж
+  const pscs = stem.match(/pscs_id_(\d+)/)
+  if (pscs) return pscs[1]
 
   // Короткие имена «1.xlsx» / «2.xlsx» или первое число в имени
   const num = stem.match(/(\d+)/)
@@ -94,29 +105,71 @@ function toDateStr(v: unknown): string | null {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+/** Поля детального отчёта, колонки которых ищем по заголовку. */
+type ColField =
+  | 'period' | 'agent' | 'scheme' | 'clientName' | 'clientInn' | 'segment'
+  | 'phoneActivation' | 'phoneCurrent' | 'subscriberId'
+  | 'activationDate' | 'registrationDate'
+  | 'tariffActivation' | 'tariffCurrent' | 'pointOfSale'
+  | 'chargesTotal' | 'chargesPrev' | 'chargesMonth'
+  | 'rewardPrev' | 'rewardRate' | 'rewardMonth'
+
+type ColMap = Partial<Record<ColField, number>>
+
+/** Денежные поля, к которым применяется коэффициент НДС при нормализации. */
+const MONEY_FIELDS: ColField[] = ['chargesTotal', 'chargesPrev', 'chargesMonth', 'rewardPrev', 'rewardMonth']
+
+/** Нормализует заголовок: нижний регистр, ё→е, схлопывание пробелов. */
+function normHeader(v: unknown): string {
+  return String(v ?? '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * Строит карту «поле → индекс колонки» по строке заголовка детального листа.
+ * Поиск по ключевым словам делает парсер устойчивым к сдвигу/добавлению
+ * колонок (формат ≤2025 и формат 2026+ отличаются на 3 колонки).
+ */
+function buildColumnMap(header: unknown[]): ColMap {
+  const h = header.map(normHeader)
+  const find = (...needles: string[]): number | undefined => {
+    const idx = h.findIndex(cell => cell && needles.every(n => cell.includes(n)))
+    return idx === -1 ? undefined : idx
+  }
+
+  return {
+    period:           find('отчетный период'),
+    agent:            find('контрагент'),
+    scheme:           find('имя схемы'),
+    clientName:       find('наименование клиента'),
+    clientInn:        find('инн клиента'),
+    segment:          find('сегмент абонента'),
+    phoneActivation:  find('номер на момент активации'),
+    phoneCurrent:     find('номер на последний день'),
+    subscriberId:     find('ид абонента'),               // нет в формате ≤2025
+    activationDate:   find('дата активации'),
+    registrationDate: find('дата регистрации'),
+    tariffActivation: find('тарифный план на конец дня активации'),
+    tariffCurrent:    find('тарифный план на конец отчетного месяца'),
+    pointOfSale:      find('точка продаж'),
+    chargesTotal:     find('начислений', 'накопительно'),
+    chargesPrev:      find('начислений', 'за предыдущие периоды'),
+    chargesMonth:     find('начислений', 'в отчетном месяце'),
+    rewardPrev:       find('вознаграждения', 'за предыдущие периоды'),
+    rewardRate:       find('ставка %'),
+    rewardMonth:      find('вознаграждения', 'в отчетном месяце'),
+  }
+}
+
 /**
  * Парсит xlsx-файл МегаФон — лист «Детальный отчет по абонентам».
- * Колонки (0-based, с учётом что col 0 = None):
- *   1:  Отчётный период
- *   2:  Контрагент
- *   5:  Лицевой счет
- *   6:  ИНН клиента
- *   8:  Наименование клиента
- *   9:  Сегмент абонента
- *  11:  Номер на момент активации
- *  12:  Номер на последний день отчетного месяца
- *  13:  ИД абонента
- *  14:  Дата активации
- *  15:  Дата регистрации
- *  17:  Точка продаж
- *  18:  ТП на конец дня активации
- *  19:  ТП на конец отчетного месяца
- *  20:  Начисления накопительно без НДС
- *  21:  Начисления за предыдущие периоды без НДС
- *  22:  Начисления за отчётный месяц без НДС
- *  23:  Вознаграждение за предыдущие периоды без НДС
- *  24:  Ставка %
- *  25:  Вознаграждение за месяц без НДС
+ *
+ * Колонки ищутся по тексту заголовка (а не по фиксированным номерам), т.к.
+ * формат отчёта менялся: в 2026 МегаФон добавил 3 колонки («Наименования
+ * правил», «ИД абонента», «Статус инфокарты»), сдвинув все денежные колонки.
+ *
+ * Нормализация НДС: до 2026 суммы приходили с НДС 20%, с 2026 — без НДС.
+ * Чтобы динамика и KPI были сопоставимы, всё приводится к базе «без НДС»:
+ * если заголовок денежной колонки содержит «с НДС», суммы делятся на 1.2.
  */
 export function parseXlsx(buffer: Buffer, filename: string): ParsedRow[] {
   const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true })
@@ -130,49 +183,86 @@ export function parseXlsx(buffer: Buffer, filename: string): ParsedRow[] {
   const ws = wb.Sheets[sheetName]
   const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true })
 
-  const contractId = extractContractId(filename)
-  const parsed: ParsedRow[] = []
-
-  // Лог первой строки данных для отладки парсинга
-  if (rows[2]) {
-    const r = rows[2] as unknown[]
-    logger.info(`[megafon] sample row[2]: period=${r[1]}, activationDate=${r[14]} (${typeof r[14]}), registrationDate=${r[15]} (${typeof r[15]})`)
+  // Находим строку заголовка (содержит «Отчётный период»), данные идут после неё
+  const headerIdx = rows.findIndex(r => Array.isArray(r) && r.some(c => normHeader(c).includes('отчетный период')))
+  if (headerIdx === -1) {
+    throw new Error('Не найдена строка заголовка («Отчётный период») в детальном листе')
+  }
+  const col = buildColumnMap(rows[headerIdx])
+  if (col.period === undefined || col.agent === undefined || col.chargesMonth === undefined || col.rewardMonth === undefined) {
+    throw new Error(`Не удалось распознать ключевые колонки отчёта (period/agent/charges/reward). Найдено: ${JSON.stringify(col)}`)
   }
 
-  // Пропускаем заголовки (строки 0-1), данные начинаются со строки 2
-  for (let i = 2; i < rows.length; i++) {
+  // Коэффициент НДС: если суммы «с НДС» — приводим к «без НДС» делением на 1.2
+  const chargesHeader = normHeader(rows[headerIdx][col.chargesMonth])
+  const hasVat = chargesHeader.includes('с ндс') && !chargesHeader.includes('без ндс')
+  const vatFactor = hasVat ? 1 / 1.2 : 1
+
+  const parsed: ParsedRow[] = []
+  let votes1 = 0 // голоса за договор «1» по «Имя схемы»
+  let votes2 = 0 // голоса за договор «2»
+
+  // Читает текстовую ячейку по полю; undefined-колонка → null
+  const str = (r: unknown[], f: ColField): string | null => {
+    const i = col[f]
+    if (i === undefined) return null
+    return r[i] ? String(r[i]).trim() : null
+  }
+  // Читает денежную ячейку (в копейках, после нормализации НДС)
+  const money = (r: unknown[], f: ColField): number | null => {
+    const i = col[f]
+    if (i === undefined) return null
+    const n = Number(r[i])
+    if (!Number.isFinite(n)) return null
+    return rub2kop(n * vatFactor)
+  }
+
+  logger.info(`[megafon] ${sheetName}: headerRow=${headerIdx}, vat=${hasVat ? 'с НДС→/1.2' : 'без НДС'}, chargesMonthCol=${col.chargesMonth}`)
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
     const r = rows[i]
     if (!r || !Array.isArray(r)) continue
 
-    const period = Number(r[1])
+    const period = Number(r[col.period])
     if (!period || period < 200000) continue // не строка данных
 
-    const agent = String(r[2] ?? '').trim()
+    const agent = String(r[col.agent] ?? '').trim()
     if (!agent) continue
+
+    // Голос за договор по «Имя схемы»: Унификация/B2B → д.1, прочее → д.2
+    const scheme = col.scheme !== undefined ? String(r[col.scheme] ?? '').trim() : ''
+    if (scheme) (schemeVotesContract1(scheme) ? votes1++ : votes2++)
 
     parsed.push({
       period,
       agent,
-      contractId,
-      clientName:       r[8] ? String(r[8]).trim() : null,
-      clientInn:        r[6] ? String(r[6]).trim() : null,
-      segment:          r[9] ? String(r[9]).trim() : null,
-      phoneActivation:  r[11] ? String(r[11]).trim() : null,
-      phoneCurrent:     r[12] ? String(r[12]).trim() : null,
-      subscriberId:     r[13] ? String(r[13]).trim() : null,
-      activationDate:   toDate(r[14]),
-      registrationDate: toDateStr(r[15]),
-      tariffActivation: r[18] ? String(r[18]).trim() : null,
-      tariffCurrent:    r[19] ? String(r[19]).trim() : null,
-      pointOfSale:      r[17] ? String(r[17]).trim() : null,
-      chargesTotal:     rub2kop(r[20]),
-      chargesPrev:      rub2kop(r[21]),
-      chargesMonth:     rub2kop(r[22]),
-      rewardPrev:       rub2kop(r[23]),
-      rewardRate:       Number(r[24]) || null,
-      rewardMonth:      rub2kop(r[25]),
+      contractId:       null, // проставим ниже, определив договор по данным
+      clientName:       str(r, 'clientName'),
+      clientInn:        str(r, 'clientInn'),
+      segment:          str(r, 'segment'),
+      phoneActivation:  str(r, 'phoneActivation'),
+      phoneCurrent:     str(r, 'phoneCurrent'),
+      subscriberId:     str(r, 'subscriberId'),
+      activationDate:   col.activationDate   !== undefined ? toDate(r[col.activationDate])      : null,
+      registrationDate: col.registrationDate !== undefined ? toDateStr(r[col.registrationDate]) : null,
+      tariffActivation: str(r, 'tariffActivation'),
+      tariffCurrent:    str(r, 'tariffCurrent'),
+      pointOfSale:      str(r, 'pointOfSale'),
+      chargesTotal:     money(r, 'chargesTotal'),
+      chargesPrev:      money(r, 'chargesPrev'),
+      chargesMonth:     money(r, 'chargesMonth'),
+      rewardPrev:       money(r, 'rewardPrev'),
+      rewardRate:       col.rewardRate !== undefined ? (Number(r[col.rewardRate]) || null) : null,
+      rewardMonth:      money(r, 'rewardMonth'),
     })
   }
+
+  // Договор определяем по данным («Имя схемы»); имя файла — запасной вариант
+  const dataContract = votes1 > votes2 ? '1' : votes2 > 0 ? '2' : null
+  const fileContract = extractContractId(filename)
+  const contractId = dataContract ?? fileContract
+  for (const r of parsed) r.contractId = contractId
+  logger.info(`[megafon] contract=${contractId} (схемы: д1=${votes1}, д2=${votes2}; по имени=${fileContract ?? '—'})`)
 
   return parsed
 }
