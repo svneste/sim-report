@@ -45,6 +45,15 @@ function addMonths(period: number, delta: number): number {
   return Math.floor(idx / 12) * 100 + (idx % 12) + 1
 }
 
+// Текущий период YYYYMM по локальной дате
+function currentPeriod(): number {
+  const d = new Date()
+  return d.getFullYear() * 100 + (d.getMonth() + 1)
+}
+
+// Режим окна графика: скользящие 12 месяцев или конкретный календарный год
+type ViewMode = 'rolling' | number
+
 const fmtK = (v: number) => {
   if (Math.abs(v) >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`
   if (Math.abs(v) >= 1_000) return `${Math.round(v / 1_000)}K`
@@ -76,8 +85,8 @@ export function MegafonDynamicsPage() {
   const [hidden, setHidden] = useState<Set<string>>(() => new Set())
   // Сортировка таблицы: 'desc' — сначала новые, 'asc' — сначала старые
   const [tableSort, setTableSort] = useState<'asc' | 'desc'>('asc')
-  // Выбранный год графика (null до загрузки данных — затем последний год с данными)
-  const [year, setYear] = useState<number | null>(null)
+  // Окно графика: 'rolling' — скользящие 12 мес (по умолчанию), либо год (число)
+  const [view, setView] = useState<ViewMode>('rolling')
   const toggleSeries = useCallback((id: string) => {
     setHidden(prev => {
       const next = new Set(prev)
@@ -126,17 +135,22 @@ export function MegafonDynamicsPage() {
     return { byPeriod, contractKeys: keys, years }
   }, [data])
 
-  // По умолчанию — последний год с данными (можно листать стрелками к прошлым).
-  useEffect(() => {
-    if (year == null && years.length) setYear(years[years.length - 1])
-  }, [years, year])
-
-  // Строки графика — весь выбранный год, январь→декабрь (пустые месяцы — null,
-  // чтобы линия рвалась, а не падала в ноль; ось показывает весь год-«каркас»).
+  // Строки графика. 'rolling' — скользящее окно 12 мес, заканчивается на текущем
+  // месяце (или последнем с данными, если он позже). Год — январь→декабрь.
+  // Пустые месяцы — null, чтобы линия рвалась, а не падала в ноль (ось при этом
+  // показывает весь период-«каркас»).
   const chartRows = useMemo(() => {
-    if (year == null) return [] as ChartRow[]
-    const start = year * 100 + 1
-    const end = year * 100 + 12
+    let start: number
+    let end: number
+    if (view === 'rolling') {
+      const withData = Array.from(byPeriod.keys())
+      const latest = withData.length ? Math.max(...withData) : currentPeriod()
+      end = Math.max(currentPeriod(), latest)
+      start = addMonths(end, -11)
+    } else {
+      start = view * 100 + 1
+      end = view * 100 + 12
+    }
 
     const rows: ChartRow[] = []
     for (let p = start; p <= end; p = addMonths(p, 1)) {
@@ -153,7 +167,7 @@ export function MegafonDynamicsPage() {
       rows.push(row)
     }
     return rows
-  }, [byPeriod, contractKeys, year])
+  }, [byPeriod, contractKeys, view])
 
   const colorTotal = COLOR_TOTAL
   const colorAxis = isDark ? '#71717a' : '#a1a1aa'
@@ -184,27 +198,24 @@ export function MegafonDynamicsPage() {
     <div>
       <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
         <h1 className="text-xl font-semibold">Финансы · МегаФон · Динамика</h1>
-        {year != null && years.length > 0 && (
-          <div className="inline-flex items-center rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden text-sm">
-            <button
-              onClick={() => setYear(y => (y != null ? y - 1 : y))}
-              disabled={year <= years[0]}
-              title="Предыдущий год"
-              className="px-2.5 h-8 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-            >
-              ‹
-            </button>
-            <span className="px-3 h-8 flex items-center font-medium tabular-nums border-x border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100">
-              {year}
-            </span>
-            <button
-              onClick={() => setYear(y => (y != null ? y + 1 : y))}
-              disabled={year >= years[years.length - 1]}
-              title="Следующий год"
-              className="px-2.5 h-8 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-            >
-              ›
-            </button>
+        {years.length > 0 && (
+          <div className="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden text-xs">
+            {([
+              { key: 'rolling' as ViewMode, label: '12 мес' },
+              ...years.map(y => ({ key: y as ViewMode, label: String(y) })),
+            ]).map((opt, i) => (
+              <button
+                key={String(opt.key)}
+                onClick={() => setView(opt.key)}
+                className={`px-3 h-8 transition-colors tabular-nums ${i > 0 ? 'border-l border-zinc-200 dark:border-zinc-800' : ''} ${
+                  view === opt.key
+                    ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium'
+                    : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
         )}
       </div>
