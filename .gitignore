@@ -13,3 +13,7 @@ widget/*.zip
 .deploy/
 backend.env
 
+# Исходные выгрузки МегаФона (грузятся в БД, в репозитории не нужны)
+АВ МегаФон/
+backend/src/scripts/load-megafon.ts
+

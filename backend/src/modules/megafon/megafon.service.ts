@@ -29,14 +29,26 @@ interface ParsedRow {
   rewardMonth:      number | null
 }
 
-/** Извлекает contract ID из имени файла.
- *  «1.xlsx» → «1», «2.xlsx» → «2», «pscs_id_123.xlsx» → «123». */
+/** Определяет договор по имени файла → стабильный contractId «1» или «2».
+ *  Распознаёт реальные имена выгрузок МегаФона и короткие «1.xlsx»/«2.xlsx».
+ *  Примеры:
+ *    «Договор № 1-01072015:АСМ.xlsx»      → «1» (договор 1-01072015/АСМ)
+ *    «Договор № 1-01.05.2018:АС:B2B.xlsx» → «2» (договор 1-01.05.2018/АС/B2B)
+ *    «1.xlsx» → «1», «2.xlsx» → «2», «pscs_id_123.xlsx» → «123». */
 function extractContractId(filename: string): string | null {
   // Убираем расширение, берём имя файла без пути
   const stem = filename.replace(/\.[^.]+$/, '').replace(/^.*[\\/]/, '')
-  // Ищем pscs_id_XXXXX или просто первое число в имени
+
+  // pscs_id_XXXXX — явный идентификатор
   const pscs = stem.match(/pscs_id_(\d+)/)
   if (pscs) return pscs[1]
+
+  // Маркеры договоров в имени файла (проверяем ДО общего числа,
+  // т.к. имена «Договор № 1-...» начинаются с цифры 1 для обоих договоров)
+  if (/2015|АСМ/i.test(stem)) return '1'           // договор 1-01072015/АСМ
+  if (/2018|B2B/i.test(stem)) return '2'           // договор 1-01.05.2018/АС/B2B
+
+  // Короткие имена «1.xlsx» / «2.xlsx» или первое число в имени
   const num = stem.match(/(\d+)/)
   return num ? num[1] : null
 }
@@ -403,31 +415,26 @@ export const megafonService = {
   /**
    * Динамика вознаграждений по месяцам с разбивкой по двум договорам.
    *
-   * Каждый месяц загружаются 2 файла с разными pscs_id, но они принадлежат
-   * одному из двух договоров:
-   *   - «1-01072015/АСМ» — старый договор (активации с 2015 года)
-   *   - «1-01.05.2018/АС/B2B» — новый договор (активации с 2018 года)
+   * Каждый месяц загружаются 2 файла — по одному на договор:
+   *   - contractId «1» → «1-01072015/АСМ»      (старый договор)
+   *   - contractId «2» → «1-01.05.2018/АС/B2B» (новый договор B2B)
    *
-   * Определяем принадлежность contractId к договору по минимальной дате
-   * активации: если min(activation_date) < 2018-01-01 → договор 2015,
-   * иначе → договор 2018.
+   * Возвращаем для каждого договора пару { key, label }:
+   *   - key   — безопасный идентификатор без точек/слэшей (= contractId),
+   *             используется фронтом как dataKey графика;
+   *   - label — человекочитаемое название договора.
+   * Список contracts строится из реально присутствующих в данных ключей,
+   * поэтому сумма линий всегда совпадает с «Итого».
    */
   async getDynamics() {
-    // 1. Маппинг contractId → название договора.
-    //    Файл «1.xlsx» → contractId «1» → договор 2015
-    //    Файл «2.xlsx» → contractId «2» → договор 2018
-    const CONTRACT_2015 = '1-01072015/АСМ'
-    const CONTRACT_2018 = '1-01.05.2018/АС/B2B'
-
-    const CONTRACT_MAP: Record<string, string> = {
-      '1': CONTRACT_2015,
-      '2': CONTRACT_2018,
+    // Название договора по contractId
+    const LABELS: Record<string, string> = {
+      '1': '1-01072015/АСМ',
+      '2': '1-01.05.2018/АС/B2B',
     }
+    const labelFor = (cid: string) => LABELS[cid] ?? `Договор ${cid}`
 
-    const mapContract = (cid: string | null) =>
-      CONTRACT_MAP[cid ?? ''] ?? `Договор ${cid ?? '?'}`
-
-    // 2. Сырые данные по периоду + contractId
+    // 1. Сырые данные по периоду + contractId
     const rawRows = await db
       .select({
         period: megafonReportRows.period,
@@ -439,22 +446,28 @@ export const megafonService = {
       .groupBy(megafonReportRows.period, megafonReportRows.contractId)
       .orderBy(megafonReportRows.period)
 
-    // 3. Агрегируем по периоду + название договора
-    const grouped = new Map<string, { period: number; contract: string; chargesMonth: number; rewardMonth: number }>()
+    // 2. Агрегируем по периоду + ключу договора
+    const grouped = new Map<string, { period: number; key: string; chargesMonth: number; rewardMonth: number }>()
+    const keysInData = new Set<string>()
     for (const r of rawRows) {
-      const contract = mapContract(r.contractId)
-      const key = `${r.period}_${contract}`
-      const existing = grouped.get(key)
+      const key = r.contractId ?? 'unknown'
+      keysInData.add(key)
+      const mapKey = `${r.period}_${key}`
+      const existing = grouped.get(mapKey)
       if (existing) {
         existing.chargesMonth += r.chargesMonth
         existing.rewardMonth += r.rewardMonth
       } else {
-        grouped.set(key, { period: r.period, contract, chargesMonth: r.chargesMonth, rewardMonth: r.rewardMonth })
+        grouped.set(mapKey, { period: r.period, key, chargesMonth: r.chargesMonth, rewardMonth: r.rewardMonth })
       }
     }
 
-    const rows = Array.from(grouped.values()).sort((a, b) => a.period - b.period || a.contract.localeCompare(b.contract))
-    const contracts = [CONTRACT_2015, CONTRACT_2018]
+    const rows = Array.from(grouped.values()).sort((a, b) => a.period - b.period || a.key.localeCompare(b.key))
+
+    // Список договоров — из реально присутствующих ключей, в стабильном порядке
+    const contracts = Array.from(keysInData)
+      .sort((a, b) => a.localeCompare(b))
+      .map(key => ({ key, label: labelFor(key) }))
 
     return { rows, contracts }
   },

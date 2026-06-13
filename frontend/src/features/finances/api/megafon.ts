@@ -84,14 +84,19 @@ export async function fetchMegafonPeriods(): Promise<PeriodInfo[]> {
 
 export interface DynamicsRow {
   period: number
-  contract: string
+  key: string
   chargesMonth: number
   rewardMonth: number
 }
 
+export interface ContractInfo {
+  key: string
+  label: string
+}
+
 export interface MegafonDynamics {
   rows: DynamicsRow[]
-  contracts: string[]
+  contracts: ContractInfo[]
 }
 
 export async function fetchMegafonDynamics(): Promise<MegafonDynamics> {

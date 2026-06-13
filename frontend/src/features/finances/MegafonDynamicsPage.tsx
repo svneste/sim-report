@@ -46,8 +46,9 @@ const fmtK = (v: number) => {
 const fmtRub = (v: number) =>
   v.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' \u20BD'
 
-// Цвета линий для договоров
-const CONTRACT_COLORS = ['#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6']
+// Цвета линий для договоров (тёплый янтарь + холодный индиго — мягкая, неконфликтная пара)
+const CONTRACT_COLORS = ['#f59e0b', '#6366f1', '#8b5cf6', '#ec4899', '#14b8a6']
+const COLOR_TOTAL = '#10b981'
 
 interface ChartRow {
   period: number
@@ -63,6 +64,15 @@ export function MegafonDynamicsPage() {
   const [error, setError] = useState<string | null>(null)
   const { theme } = useTheme()
   const isDark = theme === 'dark'
+  // Скрытые серии (клик по легенде)
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set())
+  const toggleSeries = useCallback((id: string) => {
+    setHidden(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -81,7 +91,7 @@ export function MegafonDynamicsPage() {
 
   // Преобразуем данные в формат для Recharts
   const { chartRows, contractKeys } = useMemo(() => {
-    if (!data) return { chartRows: [], contractKeys: [] as string[] }
+    if (!data) return { chartRows: [], contractKeys: [] as MegafonDynamics['contracts'] }
 
     const keys = data.contracts
 
@@ -99,7 +109,7 @@ export function MegafonDynamicsPage() {
         byPeriod.set(row.period, entry)
       }
       const reward = row.rewardMonth / 100 // копейки → рубли
-      entry[`contract_${row.contract}`] = reward
+      entry[`contract_${row.key}`] = reward
       entry.total = (entry.total as number) + reward
     }
 
@@ -108,20 +118,39 @@ export function MegafonDynamicsPage() {
     // Заполняем нулями пропущенные договоры
     for (const row of rows) {
       for (const k of keys) {
-        if (row[`contract_${k}`] === undefined) row[`contract_${k}`] = 0
+        if (row[`contract_${k.key}`] === undefined) row[`contract_${k.key}`] = 0
       }
     }
 
     return { chartRows: rows, contractKeys: keys }
   }, [data])
 
-  const colorTotal = '#10b981'
-  const colorAxis = isDark ? '#52525b' : '#a1a1aa'
-  const colorGrid = isDark ? '#27272a' : '#e4e4e7'
-  const colorTooltip = isDark ? '#18181b' : '#ffffff'
-  const colorTooltipBorder = isDark ? '#27272a' : '#e4e4e7'
+  const colorTotal = COLOR_TOTAL
+  const colorAxis = isDark ? '#71717a' : '#a1a1aa'
+  const colorGrid = isDark ? '#27272a' : '#f0f0f1'
 
   const hasData = chartRows.length > 0
+
+  // Описание всех серий (договоры + Итого) в одном массиве — для легенды и линий
+  const series = useMemo(() => {
+    const arr = contractKeys.map((k, i) => ({
+      id: `contract_${k.key}`,
+      label: k.label,
+      color: CONTRACT_COLORS[i % CONTRACT_COLORS.length],
+      hero: false,
+    }))
+    arr.push({ id: 'total', label: 'Итого', color: colorTotal, hero: true })
+    return arr
+  }, [contractKeys, colorTotal])
+
+  // KPI: последнее «Итого» и рост к предыдущему месяцу
+  const last = chartRows[chartRows.length - 1]
+  const prev = chartRows[chartRows.length - 2]
+  const latestTotal = last ? Number(last.total) : 0
+  const deltaPct =
+    last && prev && Number(prev.total) > 0
+      ? ((Number(last.total) - Number(prev.total)) / Number(prev.total)) * 100
+      : null
 
   return (
     <div>
@@ -145,110 +174,127 @@ export function MegafonDynamicsPage() {
 
       {!loading && hasData && (
         <>
-          {/* Легенда */}
-          <div className="flex items-center gap-4 mb-3 text-[11px] text-zinc-500 dark:text-zinc-400 flex-wrap">
-            {contractKeys.map((k, i) => (
-              <div key={k} className="flex items-center gap-1.5">
-                <span
-                  className="inline-block w-3 h-[2px] rounded-full"
-                  style={{ background: CONTRACT_COLORS[i % CONTRACT_COLORS.length] }}
-                />
-                {k}
+          {/* Карточка графика */}
+          <div className="border border-zinc-200 dark:border-zinc-800/80 rounded-2xl bg-gradient-to-b from-white to-zinc-50/60 dark:from-zinc-900 dark:to-zinc-950/40 shadow-sm overflow-hidden">
+            {/* Шапка: KPI слева + интерактивная легенда справа */}
+            <div className="flex items-start justify-between gap-4 flex-wrap px-5 pt-5 pb-1">
+              <div>
+                <div className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">
+                  Вознаграждение{last ? ` · ${(last as ChartRow).fullLabel}` : ''}
+                </div>
+                <div className="mt-1 flex items-baseline gap-2.5">
+                  <span className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 tabular-nums">
+                    {fmtRub(latestTotal)}
+                  </span>
+                  {deltaPct !== null && (
+                    <span
+                      className={`inline-flex items-center gap-0.5 text-[12px] font-semibold px-1.5 py-0.5 rounded-md ${
+                        deltaPct >= 0
+                          ? 'text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-500/10'
+                          : 'text-red-600 bg-red-50 dark:text-red-400 dark:bg-red-500/10'
+                      }`}
+                    >
+                      {deltaPct >= 0 ? '▲' : '▼'} {Math.abs(deltaPct).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%
+                    </span>
+                  )}
+                </div>
               </div>
-            ))}
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block w-3 h-[2px] rounded-full" style={{ background: colorTotal }} />
-              Итого
-            </div>
-          </div>
 
-          {/* График */}
-          <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm p-4">
-            <div style={{ height: 400 }}>
+              {/* Легенда-чипы (клик — скрыть/показать серию) */}
+              <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                {series.map(s => {
+                  const off = hidden.has(s.id)
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => toggleSeries(s.id)}
+                      className={`group flex items-center gap-1.5 pl-2 pr-2.5 h-7 rounded-full border text-[12px] font-medium transition-colors ${
+                        off
+                          ? 'border-zinc-200 dark:border-zinc-800 text-zinc-400 dark:text-zinc-600'
+                          : 'border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100/70 dark:hover:bg-zinc-800/60'
+                      }`}
+                      title={off ? 'Показать' : 'Скрыть'}
+                    >
+                      <span
+                        className="inline-block w-2.5 h-2.5 rounded-full transition-opacity"
+                        style={{ background: s.color, opacity: off ? 0.25 : 1 }}
+                      />
+                      <span className={off ? 'line-through' : ''}>{s.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* График */}
+            <div className="px-2 pb-3" style={{ height: 380 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={chartRows} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
+                <ComposedChart data={chartRows} margin={{ top: 12, right: 20, left: 4, bottom: 4 }}>
                   <defs>
                     <linearGradient id="meg-total-grad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%"   stopColor={colorTotal} stopOpacity={0.15} />
+                      <stop offset="0%"   stopColor={colorTotal} stopOpacity={0.28} />
+                      <stop offset="55%"  stopColor={colorTotal} stopOpacity={0.07} />
                       <stop offset="100%" stopColor={colorTotal} stopOpacity={0} />
                     </linearGradient>
                   </defs>
 
-                  <CartesianGrid stroke={colorGrid} strokeDasharray="3 3" vertical={false} />
+                  <CartesianGrid stroke={colorGrid} strokeDasharray="4 5" vertical={false} />
 
                   <XAxis
                     dataKey="label"
                     interval={0}
-                    tick={{ fill: colorAxis, fontSize: 10 }}
-                    tickLine={{ stroke: colorGrid }}
-                    axisLine={{ stroke: colorGrid }}
+                    padding={{ left: 18, right: 18 }}
+                    tick={{ fill: colorAxis, fontSize: 11 }}
+                    tickMargin={12}
+                    tickLine={false}
+                    axisLine={false}
                   />
                   <YAxis
-                    tick={{ fill: colorAxis, fontSize: 10 }}
-                    tickLine={{ stroke: colorGrid }}
-                    axisLine={{ stroke: colorGrid }}
-                    width={55}
+                    tick={{ fill: colorAxis, fontSize: 11 }}
+                    tickMargin={8}
+                    tickLine={false}
+                    axisLine={false}
+                    width={46}
                     allowDecimals={false}
                     tickFormatter={fmtK}
                   />
 
                   <Tooltip
-                    cursor={{ stroke: colorAxis, strokeDasharray: '3 3' }}
-                    contentStyle={{
-                      background: colorTooltip,
-                      border: `1px solid ${colorTooltipBorder}`,
-                      borderRadius: 8,
-                      fontSize: 12,
-                      padding: '8px 10px',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-                      color: isDark ? '#e4e4e7' : '#18181b',
-                    }}
-                    labelStyle={{
-                      color: isDark ? '#a1a1aa' : '#71717a',
-                      marginBottom: 4,
-                      fontSize: 11,
-                    }}
-                    labelFormatter={(_label, payload) => {
-                      const row = payload?.[0]?.payload as ChartRow | undefined
-                      return row?.fullLabel ?? _label
-                    }}
-                    formatter={(value, _name) => {
-                      const v = Number(value ?? 0)
-                      const name = String(_name)
-                      let label = 'Итого'
-                      if (name.startsWith('contract_')) {
-                        label = name.replace('contract_', '')
-                      }
-                      return [fmtRub(v), label]
-                    }}
+                    cursor={{ stroke: colorAxis, strokeWidth: 1, strokeDasharray: '4 4' }}
+                    content={<ChartTooltip isDark={isDark} series={series} />}
                   />
 
-                  {/* Линии по договорам */}
-                  {contractKeys.map((k, i) => (
-                    <Line
-                      key={k}
-                      type="monotone"
-                      dataKey={`contract_${k}`}
-                      stroke={CONTRACT_COLORS[i % CONTRACT_COLORS.length]}
-                      strokeWidth={2}
-                      dot={{ r: 3, fill: CONTRACT_COLORS[i % CONTRACT_COLORS.length], stroke: CONTRACT_COLORS[i % CONTRACT_COLORS.length] }}
-                      activeDot={{ r: 5, stroke: isDark ? '#18181b' : '#fff', strokeWidth: 2, fill: CONTRACT_COLORS[i % CONTRACT_COLORS.length] }}
-                      isAnimationActive={false}
-                    />
-                  ))}
-
-                  {/* Итого — зелёная с заливкой */}
+                  {/* Итого — герой: сплошная зелёная с насыщенной заливкой (рисуем первой, под линиями) */}
                   <Area
                     type="monotone"
                     dataKey="total"
+                    name="Итого"
+                    hide={hidden.has('total')}
                     stroke={colorTotal}
-                    strokeWidth={2}
-                    strokeDasharray="6 3"
+                    strokeWidth={2.5}
+                    strokeLinecap="round"
                     fill="url(#meg-total-grad)"
-                    dot={{ r: 3, fill: colorTotal, stroke: colorTotal }}
-                    activeDot={{ r: 5, stroke: isDark ? '#18181b' : '#fff', strokeWidth: 2, fill: colorTotal }}
+                    dot={false}
+                    activeDot={{ r: 5, stroke: isDark ? '#0a0a0a' : '#fff', strokeWidth: 2, fill: colorTotal }}
                     isAnimationActive={false}
                   />
+
+                  {/* Линии по договорам — тонкие, без статичных точек */}
+                  {contractKeys.map((k, i) => (
+                    <Line
+                      key={k.key}
+                      name={k.label}
+                      type="monotone"
+                      dataKey={`contract_${k.key}`}
+                      hide={hidden.has(`contract_${k.key}`)}
+                      stroke={CONTRACT_COLORS[i % CONTRACT_COLORS.length]}
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      dot={false}
+                      activeDot={{ r: 4.5, stroke: isDark ? '#0a0a0a' : '#fff', strokeWidth: 2, fill: CONTRACT_COLORS[i % CONTRACT_COLORS.length] }}
+                      isAnimationActive={false}
+                    />
+                  ))}
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -266,8 +312,8 @@ export function MegafonDynamicsPage() {
                         Период
                       </th>
                       {contractKeys.map((k, i) => (
-                        <th key={k} className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium h-10 whitespace-nowrap" style={{ color: CONTRACT_COLORS[i % CONTRACT_COLORS.length] }}>
-                          {k}
+                        <th key={k.key} className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium h-10 whitespace-nowrap" style={{ color: CONTRACT_COLORS[i % CONTRACT_COLORS.length] }}>
+                          {k.label}
                         </th>
                       ))}
                       <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-emerald-600 dark:text-emerald-400 h-10">
@@ -284,9 +330,9 @@ export function MegafonDynamicsPage() {
                           </div>
                         </td>
                         {contractKeys.map(k => (
-                          <td key={k} className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
+                          <td key={k.key} className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
                             <div className="h-[36px] flex items-center justify-end text-[12px] font-semibold text-zinc-700 dark:text-zinc-300">
-                              {fmtRub(Number(row[`contract_${k}`] ?? 0))}
+                              {fmtRub(Number(row[`contract_${k.key}`] ?? 0))}
                             </div>
                           </td>
                         ))}
@@ -303,9 +349,9 @@ export function MegafonDynamicsPage() {
                         <div className="h-[36px] flex items-center text-[12px] font-semibold text-zinc-500 dark:text-zinc-400">Итого</div>
                       </td>
                       {contractKeys.map(k => {
-                        const sum = chartRows.reduce((s, r) => s + Number(r[`contract_${k}`] ?? 0), 0)
+                        const sum = chartRows.reduce((s, r) => s + Number(r[`contract_${k.key}`] ?? 0), 0)
                         return (
-                          <td key={k} className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
+                          <td key={k.key} className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
                             <div className="h-[36px] flex items-center justify-end text-[12px] font-bold text-zinc-900 dark:text-zinc-100">
                               {fmtRub(sum)}
                             </div>
@@ -331,6 +377,72 @@ export function MegafonDynamicsPage() {
           Нет данных. Загрузите xlsx-отчёты МегаФон за несколько периодов.
         </div>
       )}
+    </div>
+  )
+}
+
+// ===================== Кастомный тултип =====================
+
+interface TooltipSeries { id: string; label: string; color: string; hero: boolean }
+
+function ChartTooltip({
+  active,
+  payload,
+  isDark,
+  series,
+}: {
+  active?: boolean
+  payload?: Array<{ dataKey?: string | number; payload?: ChartRow }>
+  isDark: boolean
+  series: TooltipSeries[]
+}) {
+  if (!active || !payload || payload.length === 0) return null
+  const row = payload[0]?.payload
+  if (!row) return null
+
+  // Только видимые серии, герой (Итого) — первым
+  const visible = new Set(payload.map(p => String(p.dataKey)))
+  const items = series
+    .filter(s => visible.has(s.id))
+    .sort((a, b) => Number(b.hero) - Number(a.hero))
+
+  return (
+    <div
+      style={{
+        background: isDark ? 'rgba(24,24,27,0.96)' : 'rgba(255,255,255,0.98)',
+        border: `1px solid ${isDark ? '#3f3f46' : '#e4e4e7'}`,
+        borderRadius: 12,
+        padding: '10px 12px',
+        boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.5)' : '0 8px 24px rgba(0,0,0,0.10)',
+        backdropFilter: 'blur(6px)',
+        minWidth: 180,
+      }}
+    >
+      <div
+        style={{ color: isDark ? '#a1a1aa' : '#71717a', fontSize: 11, fontWeight: 600, marginBottom: 8 }}
+      >
+        {row.fullLabel}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        {items.map(s => (
+          <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 99, background: s.color, flexShrink: 0 }} />
+            <span style={{ color: isDark ? '#d4d4d8' : '#52525b', fontSize: 12, flex: 1 }}>
+              {s.label}
+            </span>
+            <span
+              style={{
+                color: isDark ? '#fafafa' : '#18181b',
+                fontSize: 12.5,
+                fontWeight: s.hero ? 700 : 600,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {fmtRub(Number(row[s.id] ?? 0))}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
