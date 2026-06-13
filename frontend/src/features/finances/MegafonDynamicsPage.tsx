@@ -384,26 +384,42 @@ export function MegafonDynamicsPage() {
     <div>
       <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
         <h1 className="text-xl font-semibold">Финансы · МегаФон · Динамика</h1>
-        {years.length > 0 && (
-          <div className="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden text-xs">
-            {([
-              { key: 'rolling' as ViewMode, label: '12 мес' },
-              ...years.map(y => ({ key: y as ViewMode, label: String(y) })),
-            ]).map((opt, i) => (
-              <button
-                key={String(opt.key)}
-                onClick={() => setView(opt.key)}
-                className={`px-3 h-8 transition-colors tabular-nums ${i > 0 ? 'border-l border-zinc-200 dark:border-zinc-800' : ''} ${
-                  view === opt.key
-                    ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium'
-                    : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {years.length > 0 && (
+            <div className="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden text-xs">
+              {([
+                { key: 'rolling' as ViewMode, label: '12 мес' },
+                ...years.map(y => ({ key: y as ViewMode, label: String(y) })),
+              ]).map((opt, i) => (
+                <button
+                  key={String(opt.key)}
+                  onClick={() => setView(opt.key)}
+                  className={`px-3 h-8 transition-colors tabular-nums ${i > 0 ? 'border-l border-zinc-200 dark:border-zinc-800' : ''} ${
+                    view === opt.key
+                      ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium'
+                      : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+          <button
+            onClick={() => void load()}
+            disabled={loading}
+            title="Обновить данные"
+            className="px-3 h-8 rounded-lg border border-zinc-200 bg-white text-xs hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:text-zinc-200 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={loading ? 'animate-spin' : ''}>
+              <path d="M21 2v6h-6" />
+              <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+              <path d="M3 22v-6h6" />
+              <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+            </svg>
+            Обновить
+          </button>
+        </div>
       </div>
 
       {error && (
