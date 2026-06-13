@@ -83,6 +83,8 @@ export function MegafonDynamicsPage() {
   const isDark = theme === 'dark'
   // Скрытые серии (клик по легенде)
   const [hidden, setHidden] = useState<Set<string>>(() => new Set())
+  // Сортировка таблицы: 'desc' — сначала новые, 'asc' — сначала старые
+  const [tableSort, setTableSort] = useState<'asc' | 'desc'>('asc')
   const toggleSeries = useCallback((id: string) => {
     setHidden(prev => {
       const next = new Set(prev)
@@ -166,8 +168,12 @@ export function MegafonDynamicsPage() {
     return arr
   }, [contractKeys, colorTotal])
 
-  // Для таблицы — только месяцы с данными (без пустого «каркаса» графика)
-  const tableRows = useMemo(() => chartRows.filter(r => r.total != null), [chartRows])
+  // Для таблицы — только месяцы с данными (без пустого «каркаса» графика).
+  // Базовый порядок — хронологический; направление задаёт tableSort.
+  const tableRows = useMemo(() => {
+    const rows = chartRows.filter(r => r.total != null)
+    return tableSort === 'desc' ? [...rows].reverse() : rows
+  }, [chartRows, tableSort])
 
   return (
     <div>
@@ -298,7 +304,31 @@ export function MegafonDynamicsPage() {
 
           {/* Таблица с данными */}
           <div className="mt-6 mb-6">
-            <h2 className="text-base font-semibold mb-3">Детализация по месяцам</h2>
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+              <h2 className="text-base font-semibold">Детализация по месяцам</h2>
+              <div className="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden text-xs">
+                <button
+                  onClick={() => setTableSort('asc')}
+                  className={`px-3 h-8 transition-colors ${
+                    tableSort === 'asc'
+                      ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium'
+                      : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                  }`}
+                >
+                  Сначала старые
+                </button>
+                <button
+                  onClick={() => setTableSort('desc')}
+                  className={`px-3 h-8 border-l border-zinc-200 dark:border-zinc-800 transition-colors ${
+                    tableSort === 'desc'
+                      ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium'
+                      : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                  }`}
+                >
+                  Сначала новые
+                </button>
+              </div>
+            </div>
             <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm">
               <div className="overflow-x-auto">
                 <table className="border-collapse w-full">

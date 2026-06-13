@@ -447,8 +447,8 @@ export const megafonService = {
         segment: megafonReportRows.segment,
         subscribers: subscribersExpr,
         activated: activatedExpr,
-        chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::int`,
-        rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::int`,
+        chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::float8`,
+        rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::float8`,
       })
       .from(megafonReportRows)
       .where(where)
@@ -461,8 +461,8 @@ export const megafonService = {
         agent: megafonReportRows.agent,
         subscribers: subscribersExpr,
         activated: activatedExpr,
-        chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::int`,
-        rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::int`,
+        chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::float8`,
+        rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::float8`,
         rewardRates: sql<string>`string_agg(distinct ${megafonReportRows.rewardRate}::text, ', ' order by ${megafonReportRows.rewardRate}::text)`,
       })
       .from(megafonReportRows)
@@ -476,8 +476,8 @@ export const megafonService = {
         period: megafonReportRows.period,
         subscribers: sql<number>`count(*)::int`,
         activated: activatedExpr,
-        chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::int`,
-        rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::int`,
+        chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::float8`,
+        rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::float8`,
       })
       .from(megafonReportRows)
       .groupBy(megafonReportRows.period)
@@ -488,8 +488,8 @@ export const megafonService = {
       .select({
         subscribers: subscribersExpr,
         activated: activatedExpr,
-        chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::int`,
-        rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::int`,
+        chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::float8`,
+        rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::float8`,
       })
       .from(megafonReportRows)
       .where(where)
@@ -529,8 +529,8 @@ export const megafonService = {
       .select({
         period: megafonReportRows.period,
         contractId: megafonReportRows.contractId,
-        chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::int`,
-        rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::int`,
+        chargesMonth: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::float8`,
+        rewardMonth: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::float8`,
       })
       .from(megafonReportRows)
       .groupBy(megafonReportRows.period, megafonReportRows.contractId)
