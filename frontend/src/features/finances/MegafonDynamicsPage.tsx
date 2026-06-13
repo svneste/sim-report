@@ -276,6 +276,78 @@ export function MegafonDynamicsPage() {
     return out
   }, [chartRows, contractKeys])
 
+  // Прогноз на 3 месяца вперёд. Строится по ВСЕЙ истории (не по видимому окну),
+  // от последнего фактического месяца. Темп роста — геометрическое среднее
+  // месячных приростов за последние HORIZON_BASIS мес, отдельно по каждому
+  // договору; «Итого» = сумма прогнозов договоров. Сложный процент: каждый
+  // следующий месяц = предыдущий × средний темп.
+  const forecast = useMemo(() => {
+    const periods = Array.from(byPeriod.keys()).sort((a, b) => a - b)
+    if (periods.length < 3) return null // мало истории для осмысленного прогноза
+
+    const contractIds = contractKeys.map(k => `contract_${k.key}`)
+    const valAt = (p: number, id: string): number => {
+      const e = byPeriod.get(p)
+      if (!e) return 0
+      if (id === 'total') return e.total
+      return e.contracts[id.slice('contract_'.length)] ?? 0
+    }
+
+    const HORIZON = 3
+    const BASIS = 12 // окно для оценки среднего темпа (последние N приростов)
+
+    // Геометрическое среднее месячных приростов (учитываем только пары, где оба
+    // значения > 0 — иначе ratio не определён / шумит на старте базы).
+    const growthOf = (id: string): number => {
+      const ratios: number[] = []
+      for (let i = 1; i < periods.length; i++) {
+        const prev = valAt(periods[i - 1], id)
+        const cur = valAt(periods[i], id)
+        if (prev > 0 && cur > 0) ratios.push(cur / prev)
+      }
+      const tail = ratios.slice(-BASIS)
+      if (tail.length === 0) return 1
+      return Math.exp(tail.reduce((s, r) => s + Math.log(r), 0) / tail.length)
+    }
+
+    const growth: Record<string, number> = {}
+    for (const id of contractIds) growth[id] = growthOf(id)
+
+    const lastP = periods[periods.length - 1]
+    const lastVals: Record<string, number> = { total: valAt(lastP, 'total') }
+    for (const id of contractIds) lastVals[id] = valAt(lastP, id)
+
+    // Прогнозные месяцы со сложным процентом + дельта к предыдущему месяцу
+    const rows: Array<{ period: number; fullLabel: string; byId: Record<string, number>; deltas: Record<string, Delta> }> = []
+    let prevVals = lastVals
+    for (let h = 1; h <= HORIZON; h++) {
+      const p = addMonths(lastP, h)
+      const byId: Record<string, number> = {}
+      let total = 0
+      for (const id of contractIds) {
+        const v = Math.max(0, prevVals[id] * growth[id])
+        byId[id] = v
+        total += v
+      }
+      byId.total = total
+      const deltas: Record<string, Delta> = {}
+      for (const id of ['total', ...contractIds]) {
+        const abs = byId[id] - prevVals[id]
+        deltas[id] = { abs, pct: prevVals[id] !== 0 ? (abs / prevVals[id]) * 100 : null }
+      }
+      rows.push({ period: p, fullLabel: periodFullLabel(p), byId, deltas })
+      prevVals = byId
+    }
+
+    // Средний темп роста для подписи (в %/мес): по каждому договору + «Итого»
+    const growthPct: Record<string, number> = {}
+    for (const id of contractIds) growthPct[id] = (growth[id] - 1) * 100
+    growthPct.total = (growthOf('total') - 1) * 100
+
+    const basisMonths = Math.min(BASIS, periods.length - 1)
+    return { rows, growthPct, basisMonths, lastPeriod: lastP }
+  }, [byPeriod, contractKeys])
+
   return (
     <div>
       <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
@@ -423,8 +495,10 @@ export function MegafonDynamicsPage() {
             </div>
           </div>
 
+          {/* Детализация + прогноз — в две колонки на широких экранах */}
+          <div className="mt-6 mb-6 grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
           {/* Таблица с данными */}
-          <div className="mt-6 mb-6 max-w-4xl">
+          <div>
             <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
               <h2 className="text-base font-semibold">Детализация по месяцам</h2>
               <div className="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden text-xs">
@@ -507,6 +581,83 @@ export function MegafonDynamicsPage() {
                 </table>
               </div>
             </div>
+          </div>
+
+          {/* Прогноз на 3 месяца */}
+          {forecast && (
+            <div>
+              <div className="flex items-baseline justify-between gap-3 mb-3 flex-wrap">
+                <h2 className="text-base font-semibold">Прогноз на 3 месяца</h2>
+                <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
+                  по среднему темпу за {forecast.basisMonths} мес
+                </span>
+              </div>
+              <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="border-collapse w-full">
+                    <thead>
+                      <tr>
+                        <th className="sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-900 border-b border-r border-zinc-200 dark:border-zinc-800 px-4 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10">
+                          Период
+                        </th>
+                        {contractKeys.map((k, i) => (
+                          <th key={k.key} className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium h-10 whitespace-nowrap" style={{ color: CONTRACT_COLORS[i % CONTRACT_COLORS.length] }}>
+                            <div>{k.label}</div>
+                            <div className={`text-[10px] font-normal ${deltaColor(forecast.growthPct[`contract_${k.key}`] ?? 0)}`}>
+                              {fmtSignedPct(forecast.growthPct[`contract_${k.key}`] ?? 0)}/мес
+                            </div>
+                          </th>
+                        ))}
+                        <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-emerald-600 dark:text-emerald-400 h-10">
+                          <div>Итого</div>
+                          <div className={`text-[10px] font-normal ${deltaColor(forecast.growthPct.total)}`}>
+                            {fmtSignedPct(forecast.growthPct.total)}/мес
+                          </div>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {forecast.rows.map(fr => (
+                        <tr key={fr.period} className="border-b border-zinc-200 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-800/40 group">
+                          <td className="sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/40 border-r border-zinc-200 dark:border-zinc-800 px-4 transition-colors">
+                            <div className="min-h-[44px] flex items-center gap-2 text-[13px] text-zinc-900 dark:text-zinc-100">
+                              {fr.fullLabel}
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500">прогноз</span>
+                            </div>
+                          </td>
+                          {contractKeys.map(k => (
+                            <td key={k.key} className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right align-middle">
+                              <ValueDeltaCell value={fr.byId[`contract_${k.key}`]} delta={fr.deltas[`contract_${k.key}`]} />
+                            </td>
+                          ))}
+                          <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right align-middle">
+                            <ValueDeltaCell value={fr.byId.total} delta={fr.deltas.total} hero />
+                          </td>
+                        </tr>
+                      ))}
+                      {/* Итого за 3 месяца прогноза */}
+                      <tr className="border-t-2 border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/80">
+                        <td className="sticky left-0 z-10 bg-zinc-50 dark:bg-zinc-900/80 border-r border-zinc-200 dark:border-zinc-800 px-4">
+                          <div className="min-h-[44px] flex items-center text-[12px] font-semibold text-zinc-500 dark:text-zinc-400">Итого за 3 мес</div>
+                        </td>
+                        {contractKeys.map(k => (
+                          <td key={k.key} className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right align-middle">
+                            <ValueDeltaCell value={forecast.rows.reduce((s, fr) => s + fr.byId[`contract_${k.key}`], 0)} strong />
+                          </td>
+                        ))}
+                        <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right align-middle">
+                          <ValueDeltaCell value={forecast.rows.reduce((s, fr) => s + fr.byId.total, 0)} hero />
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <p className="mt-2 text-[11px] text-zinc-400 dark:text-zinc-500 leading-snug">
+                Оценка по среднему месячному темпу роста (геометрическое среднее) за последние {forecast.basisMonths} мес, отдельно по каждому договору. «Итого» — сумма прогнозов. Это ориентир, не гарантия.
+              </p>
+            </div>
+          )}
           </div>
         </>
       )}
