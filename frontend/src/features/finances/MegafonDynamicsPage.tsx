@@ -496,7 +496,7 @@ export function MegafonDynamicsPage() {
           <div className="mt-6 mb-6 grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
           {/* Таблица с данными */}
           <div>
-            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap min-h-8">
               <h2 className="text-base font-semibold">Детализация по месяцам</h2>
               <div className="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden text-xs">
                 <button
@@ -583,7 +583,7 @@ export function MegafonDynamicsPage() {
           {/* Прогноз на 3 месяца */}
           {forecast && (
             <div>
-              <div className="flex items-baseline justify-between gap-3 mb-3 flex-wrap">
+              <div className="flex items-center justify-between gap-3 mb-3 flex-wrap min-h-8">
                 <h2 className="text-base font-semibold">Прогноз на 3 месяца</h2>
                 <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
                   по среднему приросту за {forecast.basisMonths} мес
@@ -599,17 +599,11 @@ export function MegafonDynamicsPage() {
                         </th>
                         {contractKeys.map((k, i) => (
                           <th key={k.key} className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium h-10 whitespace-nowrap" style={{ color: CONTRACT_COLORS[i % CONTRACT_COLORS.length] }}>
-                            <div>{k.label}</div>
-                            <div className={`text-[10px] font-normal ${deltaColor(forecast.avgStep[`contract_${k.key}`] ?? 0)}`}>
-                              {fmtSignedRub(forecast.avgStep[`contract_${k.key}`] ?? 0)}/мес
-                            </div>
+                            {k.label}
                           </th>
                         ))}
                         <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-emerald-600 dark:text-emerald-400 h-10">
-                          <div>Итого</div>
-                          <div className={`text-[10px] font-normal ${deltaColor(forecast.avgStep.total)}`}>
-                            {fmtSignedRub(forecast.avgStep.total)}/мес
-                          </div>
+                          Итого
                         </th>
                       </tr>
                     </thead>
