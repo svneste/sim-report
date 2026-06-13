@@ -47,12 +47,22 @@ export interface PageRow {
   conversionMetrika: number
 }
 
+export interface PageGroup {
+  key:               string
+  label:             string
+  visits:            number
+  visitors:          number
+  leadsMetrika:      number
+  conversionMetrika: number
+  pages:             PageRow[]
+}
+
 export interface YandexReport {
   site:   { id: number; name: string; counterId: number; goalId: number | null; hasGoal: boolean }
   from:   string
   to:     string
   totals: { visitors: number; visits: number; leadsMetrika: number; conversionMetrika: number }
-  pages:  PageRow[]
+  groups: PageGroup[]
   amocrm: { configured: boolean; deals: number | null }
 }
 

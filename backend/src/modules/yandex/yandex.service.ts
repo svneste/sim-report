@@ -72,13 +72,66 @@ export interface PageRow {
   conversionMetrika: number    // leadsMetrika / visits * 100
 }
 
+/** Группа страниц по первому сегменту пути (= «адрес клиента», напр. /rzd). */
+export interface PageGroup {
+  key:               string    // 'rzd'
+  label:             string    // '/rzd'
+  visitors:          number    // сумма по подстраницам (приближение по уникальным)
+  visits:            number
+  leadsMetrika:      number
+  conversionMetrika: number
+  pages:             PageRow[]  // подстраницы, отсортированы по визитам
+}
+
 export interface YandexReport {
   site:    { id: number; name: string; counterId: number; goalId: number | null; hasGoal: boolean }
   from:    string
   to:      string
   totals:  { visitors: number; visits: number; leadsMetrika: number; conversionMetrika: number }
-  pages:   PageRow[]
+  groups:  PageGroup[]
   amocrm:  { configured: boolean; deals: number | null }  // site-level число сделок (если привязка настроена)
+}
+
+/**
+ * Сводит полный URL к ключу группы — первому сегменту пути («адрес клиента»).
+ * Отрезает протокол+домен, query (?...), hash (#...), завершающий слэш.
+ *   https://site.ru/rzd/mnp?a=1   → { key:'rzd',  label:'/rzd' }
+ *   https://site.ru/nlstar-int/   → { key:'nlstar-int', label:'/nlstar-int' }
+ *   https://site.ru/akron#!/tab/1 → { key:'akron', label:'/akron' }
+ *   https://site.ru/  (или /)     → { key:'/',     label:'Главная' }
+ * /rzd и /rzdff остаются разными группами.
+ */
+function groupKeyOf(url: string): { key: string; label: string } {
+  const m = url.match(/^https?:\/\/[^/]+(\/.*)?$/i)
+  let path = m ? (m[1] ?? '/') : url
+  path = path.split('?')[0].split('#')[0]
+  const seg = path.split('/').filter(Boolean)[0] ?? ''
+  if (!seg) return { key: '/', label: 'Главная' }
+  return { key: seg.toLowerCase(), label: '/' + seg }
+}
+
+/** Группирует страницы по первому сегменту пути; внутри и между группами сортирует по визитам. */
+function groupPages(pages: PageRow[]): PageGroup[] {
+  const map = new Map<string, PageGroup>()
+  for (const p of pages) {
+    const { key, label } = groupKeyOf(p.url)
+    let g = map.get(key)
+    if (!g) {
+      g = { key, label, visitors: 0, visits: 0, leadsMetrika: 0, conversionMetrika: 0, pages: [] }
+      map.set(key, g)
+    }
+    g.visitors     += p.visitors
+    g.visits       += p.visits
+    g.leadsMetrika += p.leadsMetrika
+    g.pages.push(p)
+  }
+  const groups = Array.from(map.values())
+  for (const g of groups) {
+    g.conversionMetrika = g.visits > 0 ? (g.leadsMetrika / g.visits) * 100 : 0
+    g.pages.sort((a, b) => b.visits - a.visits)
+  }
+  groups.sort((a, b) => b.visits - a.visits)
+  return groups
 }
 
 // ===================== Service =====================
@@ -185,7 +238,7 @@ export const yandexService = {
         leadsMetrika:      tLeads,
         conversionMetrika: tVisits > 0 ? (tLeads / tVisits) * 100 : 0,
       },
-      pages,
+      groups: groupPages(pages),
       amocrm,
     }
   },

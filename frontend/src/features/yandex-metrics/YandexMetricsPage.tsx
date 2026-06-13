@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import {
   fetchSites,
   createSite,
@@ -169,10 +169,10 @@ export function YandexMetricsPage() {
             </div>
           )}
 
-          {/* Таблица по страницам */}
+          {/* Таблица по клиентам (группам страниц) */}
           <PagesTable report={report} />
 
-          {report.pages.length === 0 && (
+          {report.groups.length === 0 && (
             <div className="text-center py-16 text-sm text-zinc-500 dark:text-zinc-400">
               Нет данных за выбранный период.
             </div>
@@ -214,19 +214,39 @@ function Kpi({ label, value, hint, color }: { label: string; value: string; hint
 // ===================== Таблица по страницам =====================
 
 function PagesTable({ report }: { report: YandexReport }) {
-  if (report.pages.length === 0) return null
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  if (report.groups.length === 0) return null
   const hasGoal = report.site.hasGoal
+
+  const toggle = (key: string) => setExpanded(prev => {
+    const next = new Set(prev)
+    next.has(key) ? next.delete(key) : next.add(key)
+    return next
+  })
 
   return (
     <div className="mb-6">
-      <h2 className="text-base font-semibold mb-3">По страницам</h2>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-base font-semibold">По клиентам</h2>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setExpanded(new Set(report.groups.map(g => g.key)))}
+            className="text-[12px] text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+          >Развернуть всё</button>
+          <span className="text-zinc-300 dark:text-zinc-700">·</span>
+          <button
+            onClick={() => setExpanded(new Set())}
+            className="text-[12px] text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+          >Свернуть всё</button>
+        </div>
+      </div>
       <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm">
         <div className="overflow-x-auto">
           <table className="border-collapse w-full">
             <thead>
               <tr>
                 <th className="sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-900 border-b border-r border-zinc-200 dark:border-zinc-800 px-4 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10">
-                  Страница
+                  Клиент / страница
                 </th>
                 <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-28">
                   Посетители
@@ -240,56 +260,77 @@ function PagesTable({ report }: { report: YandexReport }) {
               </tr>
             </thead>
             <tbody>
-              {report.pages.map(p => (
-                <tr key={p.url} className="border-b border-zinc-200 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-800/40 group">
-                  <td className="sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/40 border-r border-zinc-200 dark:border-zinc-800 px-4 transition-colors max-w-[520px]">
-                    <div className="h-[36px] flex items-center text-[13px] text-zinc-900 dark:text-zinc-100 truncate" title={p.url}>
-                      {p.url}
-                    </div>
-                  </td>
-                  <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
-                    <div className="h-[36px] flex items-center justify-end text-[12px] font-semibold text-zinc-700 dark:text-zinc-300">
-                      {num(p.visitors)}
-                    </div>
-                  </td>
-                  <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
-                    <div className="h-[36px] flex items-center justify-end text-[12px] font-semibold text-blue-600 dark:text-blue-400">
-                      {hasGoal ? num(p.leadsMetrika) : '—'}
-                    </div>
-                  </td>
-                  <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
-                    <div className="h-[36px] flex items-center justify-end text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
-                      {hasGoal ? pct(p.conversionMetrika) : '—'}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {report.groups.map(g => {
+                const isOpen = expanded.has(g.key)
+                const expandable = g.pages.length > 1
+                return (
+                  <Fragment key={g.key}>
+                    {/* Строка группы (клиент) */}
+                    <tr
+                      className={`border-b border-zinc-200 dark:border-zinc-800 group ${expandable ? 'cursor-pointer' : ''} hover:bg-zinc-50 dark:hover:bg-zinc-800/40`}
+                      onClick={() => expandable && toggle(g.key)}
+                    >
+                      <td className="sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/40 border-r border-zinc-200 dark:border-zinc-800 px-4 transition-colors max-w-[520px]">
+                        <div className="h-[40px] flex items-center gap-2 text-[13px] font-medium text-zinc-900 dark:text-zinc-100">
+                          <span className={`shrink-0 w-4 inline-flex justify-center text-zinc-400 ${expandable ? '' : 'opacity-0'}`}>
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6"
+                                 className={`transition-transform ${isOpen ? 'rotate-90' : ''}`}>
+                              <path d="M3.5 2L6.5 5L3.5 8" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </span>
+                          <span className="truncate" title={g.label}>{g.label}</span>
+                          {expandable && (
+                            <span className="shrink-0 text-[11px] text-zinc-400 dark:text-zinc-500 font-normal">
+                              {g.pages.length} стр.
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <Cell value={num(g.visitors)} className="text-zinc-800 dark:text-zinc-200 font-semibold" h={40} />
+                      <Cell value={hasGoal ? num(g.leadsMetrika) : '—'} className="text-blue-600 dark:text-blue-400 font-semibold" h={40} />
+                      <Cell value={hasGoal ? pct(g.conversionMetrika) : '—'} className="text-emerald-700 dark:text-emerald-300 font-semibold" h={40} />
+                    </tr>
+                    {/* Подстраницы */}
+                    {isOpen && g.pages.map(p => (
+                      <tr key={p.url} className="border-b border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-900/40 group">
+                        <td className="sticky left-0 z-10 bg-zinc-50/40 dark:bg-zinc-900/40 border-r border-zinc-200 dark:border-zinc-800 px-4 max-w-[520px]">
+                          <div className="h-[34px] flex items-center pl-6 text-[12px] text-zinc-500 dark:text-zinc-400 truncate" title={p.url}>
+                            {p.url}
+                          </div>
+                        </td>
+                        <Cell value={num(p.visitors)} className="text-zinc-500 dark:text-zinc-400" h={34} />
+                        <Cell value={hasGoal ? num(p.leadsMetrika) : '—'} className="text-blue-500/80 dark:text-blue-400/80" h={34} />
+                        <Cell value={hasGoal ? pct(p.conversionMetrika) : '—'} className="text-emerald-600/80 dark:text-emerald-300/80" h={34} />
+                      </tr>
+                    ))}
+                  </Fragment>
+                )
+              })}
               {/* Итого */}
               <tr className="border-t-2 border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/80">
                 <td className="sticky left-0 z-10 bg-zinc-50 dark:bg-zinc-900/80 border-r border-zinc-200 dark:border-zinc-800 px-4">
-                  <div className="h-[36px] flex items-center text-[12px] font-semibold text-zinc-500 dark:text-zinc-400">Итого</div>
+                  <div className="h-[40px] flex items-center pl-6 text-[12px] font-semibold text-zinc-500 dark:text-zinc-400">Итого</div>
                 </td>
-                <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
-                  <div className="h-[36px] flex items-center justify-end text-[12px] font-bold text-zinc-900 dark:text-zinc-100">
-                    {num(report.totals.visitors)}
-                  </div>
-                </td>
-                <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
-                  <div className="h-[36px] flex items-center justify-end text-[12px] font-bold text-blue-600 dark:text-blue-400">
-                    {hasGoal ? num(report.totals.leadsMetrika) : '—'}
-                  </div>
-                </td>
-                <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
-                  <div className="h-[36px] flex items-center justify-end text-[12px] font-bold text-emerald-600 dark:text-emerald-400">
-                    {hasGoal ? pct(report.totals.conversionMetrika) : '—'}
-                  </div>
-                </td>
+                <Cell value={num(report.totals.visitors)} className="text-zinc-900 dark:text-zinc-100 font-bold" h={40} />
+                <Cell value={hasGoal ? num(report.totals.leadsMetrika) : '—'} className="text-blue-600 dark:text-blue-400 font-bold" h={40} />
+                <Cell value={hasGoal ? pct(report.totals.conversionMetrika) : '—'} className="text-emerald-600 dark:text-emerald-400 font-bold" h={40} />
               </tr>
             </tbody>
           </table>
         </div>
       </div>
     </div>
+  )
+}
+
+/** Числовая ячейка таблицы (выравнивание по правому краю). */
+function Cell({ value, className, h }: { value: string; className?: string; h: number }) {
+  return (
+    <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
+      <div className={`flex items-center justify-end text-[12px] ${className ?? ''}`} style={{ height: h }}>
+        {value}
+      </div>
+    </td>
   )
 }
 
