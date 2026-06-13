@@ -91,6 +91,40 @@ interface ChartRow {
   [key: string]: string | number | null // dynamic contract keys (null = месяц без данных)
 }
 
+// Изменение значения ячейки: ₽ (абсолютное) и % к базе
+interface Delta {
+  abs: number | null
+  pct: number | null
+}
+
+/** Ячейка таблицы: значение + изменение (₽ и %) под ним. */
+function ValueDeltaCell({ value, delta, hero, strong }: {
+  value: number
+  delta?: Delta
+  hero?: boolean    // «Итого» — зелёный жирный
+  strong?: boolean  // строка «Итого» снизу — жирный, обычный цвет
+}) {
+  const valueCls = hero
+    ? 'font-bold text-emerald-600 dark:text-emerald-400'
+    : strong
+      ? 'font-bold text-zinc-900 dark:text-zinc-100'
+      : 'font-semibold text-zinc-700 dark:text-zinc-300'
+
+  return (
+    <div className="min-h-[44px] py-1.5 flex flex-col items-end justify-center gap-0.5">
+      <span className={`text-[12px] leading-tight ${valueCls}`}>{fmtRub(value)}</span>
+      {!delta || delta.abs == null ? (
+        <span className="text-[10px] leading-tight text-zinc-300 dark:text-zinc-600">—</span>
+      ) : (
+        <span className={`text-[10.5px] leading-tight whitespace-nowrap ${deltaColor(delta.abs)}`}>
+          {fmtSignedRub(delta.abs)}
+          {delta.pct != null && <span className="opacity-70">{' '}{fmtSignedPct(delta.pct)}</span>}
+        </span>
+      )}
+    </div>
+  )
+}
+
 export function MegafonDynamicsPage() {
   const [data, setData] = useState<MegafonDynamics | null>(null)
   const [loading, setLoading] = useState(true)
@@ -204,29 +238,43 @@ export function MegafonDynamicsPage() {
   }, [contractKeys, colorTotal])
 
   // Для таблицы — только месяцы с данными (без пустого «каркаса» графика).
-  // Считаем помесячное изменение «Итого» (к предыдущему месяцу) по
-  // хронологии, затем разворачиваем по направлению tableSort.
+  // Для каждой ячейки (каждый договор + «Итого») считаем изменение к
+  // предыдущему месяцу по хронологии, затем разворачиваем по tableSort.
   const tableRows = useMemo(() => {
     const chrono = chartRows.filter(r => r.total != null)
-    const enriched = chrono.map((r, i): ChartRow & { deltaAbs: number | null; deltaPct: number | null } => {
-      const prev = i > 0 ? (chrono[i - 1].total as number) : null
-      const cur = r.total as number
-      const deltaAbs = prev != null ? cur - prev : null
-      const deltaPct = prev != null && prev !== 0 ? ((cur - prev) / prev) * 100 : null
-      return { ...r, deltaAbs, deltaPct }
+    const ids = ['total', ...contractKeys.map(k => `contract_${k.key}`)]
+    const enriched = chrono.map((r, i) => {
+      const prev = i > 0 ? chrono[i - 1] : null
+      const deltas: Record<string, Delta> = {}
+      for (const id of ids) {
+        const cur = Number(r[id] ?? 0)
+        const pv = prev ? Number(prev[id] ?? 0) : null
+        const abs = pv != null ? cur - pv : null
+        const pct = pv != null && pv !== 0 ? ((cur - pv) / pv) * 100 : null
+        deltas[id] = { abs, pct }
+      }
+      return { row: r, deltas }
     })
     return tableSort === 'desc' ? [...enriched].reverse() : enriched
-  }, [chartRows, tableSort])
+  }, [chartRows, contractKeys, tableSort])
 
-  // Изменение за весь период: первый → последний месяц (хронологически)
-  const periodChange = useMemo(() => {
+  // Изменение за весь период: первый → последний месяц (хронологически),
+  // по каждому договору и «Итого» — для строки «Итого» в таблице.
+  const periodDeltas = useMemo(() => {
     const chrono = chartRows.filter(r => r.total != null)
     if (chrono.length < 2) return null
-    const first = chrono[0].total as number
-    const last = chrono[chrono.length - 1].total as number
-    const abs = last - first
-    return { abs, pct: first !== 0 ? (abs / first) * 100 : null }
-  }, [chartRows])
+    const first = chrono[0]
+    const last = chrono[chrono.length - 1]
+    const ids = ['total', ...contractKeys.map(k => `contract_${k.key}`)]
+    const out: Record<string, Delta> = {}
+    for (const id of ids) {
+      const f = Number(first[id] ?? 0)
+      const l = Number(last[id] ?? 0)
+      const abs = l - f
+      out[id] = { abs, pct: f !== 0 ? (abs / f) * 100 : null }
+    }
+    return out
+  }, [chartRows, contractKeys])
 
   return (
     <div>
@@ -418,84 +466,41 @@ export function MegafonDynamicsPage() {
                       <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-emerald-600 dark:text-emerald-400 h-10">
                         Итого
                       </th>
-                      <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 whitespace-nowrap" title="Изменение «Итого» к предыдущему месяцу">
-                        Изменение
-                      </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {tableRows.map(row => (
+                    {tableRows.map(({ row, deltas }) => (
                       <tr key={row.period} className="border-b border-zinc-200 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-800/40 group">
                         <td className="sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/40 border-r border-zinc-200 dark:border-zinc-800 px-4 transition-colors">
-                          <div className="h-[36px] flex items-center text-[13px] text-zinc-900 dark:text-zinc-100">
+                          <div className="min-h-[44px] flex items-center text-[13px] text-zinc-900 dark:text-zinc-100">
                             {row.fullLabel}
                           </div>
                         </td>
                         {contractKeys.map(k => (
-                          <td key={k.key} className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
-                            <div className="h-[36px] flex items-center justify-end text-[12px] font-semibold text-zinc-700 dark:text-zinc-300">
-                              {fmtRub(Number(row[`contract_${k.key}`] ?? 0))}
-                            </div>
+                          <td key={k.key} className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right align-middle">
+                            <ValueDeltaCell value={Number(row[`contract_${k.key}`] ?? 0)} delta={deltas[`contract_${k.key}`]} />
                           </td>
                         ))}
-                        <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
-                          <div className="h-[36px] flex items-center justify-end text-[12px] font-bold text-emerald-600 dark:text-emerald-400">
-                            {fmtRub(row.total as number)}
-                          </div>
-                        </td>
-                        <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
-                          <div className="h-[36px] flex items-center justify-end gap-1.5 text-[12px] font-semibold whitespace-nowrap">
-                            {row.deltaAbs == null ? (
-                              <span className="text-zinc-300 dark:text-zinc-600">—</span>
-                            ) : (
-                              <>
-                                <span className={deltaColor(row.deltaAbs)}>{fmtSignedRub(row.deltaAbs)}</span>
-                                {row.deltaPct != null && (
-                                  <span className={`text-[11px] opacity-80 ${deltaColor(row.deltaPct)}`}>
-                                    {fmtSignedPct(row.deltaPct)}
-                                  </span>
-                                )}
-                              </>
-                            )}
-                          </div>
+                        <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right align-middle">
+                          <ValueDeltaCell value={row.total as number} delta={deltas.total} hero />
                         </td>
                       </tr>
                     ))}
-                    {/* Итого */}
+                    {/* Итого — суммы по столбцам + изменение за весь период (первый → последний месяц) */}
                     <tr className="border-t-2 border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/80">
                       <td className="sticky left-0 z-10 bg-zinc-50 dark:bg-zinc-900/80 border-r border-zinc-200 dark:border-zinc-800 px-4">
-                        <div className="h-[36px] flex items-center text-[12px] font-semibold text-zinc-500 dark:text-zinc-400">Итого</div>
+                        <div className="min-h-[44px] flex items-center text-[12px] font-semibold text-zinc-500 dark:text-zinc-400">Итого</div>
                       </td>
                       {contractKeys.map(k => {
-                        const sum = tableRows.reduce((s, r) => s + Number(r[`contract_${k.key}`] ?? 0), 0)
+                        const sum = tableRows.reduce((s, { row }) => s + Number(row[`contract_${k.key}`] ?? 0), 0)
                         return (
-                          <td key={k.key} className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
-                            <div className="h-[36px] flex items-center justify-end text-[12px] font-bold text-zinc-900 dark:text-zinc-100">
-                              {fmtRub(sum)}
-                            </div>
+                          <td key={k.key} className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right align-middle">
+                            <ValueDeltaCell value={sum} delta={periodDeltas?.[`contract_${k.key}`]} strong />
                           </td>
                         )
                       })}
-                      <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
-                        <div className="h-[36px] flex items-center justify-end text-[12px] font-bold text-emerald-600 dark:text-emerald-400">
-                          {fmtRub(tableRows.reduce((s, r) => s + Number(r.total ?? 0), 0))}
-                        </div>
-                      </td>
-                      <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right" title="Изменение за период: первый → последний месяц">
-                        <div className="h-[36px] flex items-center justify-end gap-1.5 text-[12px] font-bold whitespace-nowrap">
-                          {periodChange == null ? (
-                            <span className="text-zinc-300 dark:text-zinc-600">—</span>
-                          ) : (
-                            <>
-                              <span className={deltaColor(periodChange.abs)}>{fmtSignedRub(periodChange.abs)}</span>
-                              {periodChange.pct != null && (
-                                <span className={`text-[11px] opacity-80 ${deltaColor(periodChange.pct)}`}>
-                                  {fmtSignedPct(periodChange.pct)}
-                                </span>
-                              )}
-                            </>
-                          )}
-                        </div>
+                      <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right align-middle">
+                        <ValueDeltaCell value={tableRows.reduce((s, { row }) => s + Number(row.total ?? 0), 0)} delta={periodDeltas?.total} hero />
                       </td>
                     </tr>
                   </tbody>
