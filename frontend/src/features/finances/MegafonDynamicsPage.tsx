@@ -63,6 +63,22 @@ const fmtK = (v: number) => {
 const fmtRub = (v: number) =>
   v.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' \u20BD'
 
+// \u0418\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0435 \u0441\u043E \u0437\u043D\u0430\u043A\u043E\u043C: \u00AB+12 345 \u20BD\u00BB / \u00AB\u221212 345 \u20BD\u00BB
+const fmtSignedRub = (v: number) =>
+  `${v >= 0 ? '+' : '\u2212'}${Math.abs(v).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} \u20BD`
+
+// \u041F\u0440\u043E\u0446\u0435\u043D\u0442 \u0441\u043E \u0437\u043D\u0430\u043A\u043E\u043C: \u00AB+12,3%\u00BB / \u00AB\u221212,3%\u00BB
+const fmtSignedPct = (v: number) =>
+  `${v >= 0 ? '+' : '\u2212'}${Math.abs(v).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`
+
+// \u0426\u0432\u0435\u0442 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F: \u0440\u043E\u0441\u0442 \u2014 \u0437\u0435\u043B\u0451\u043D\u044B\u0439, \u043F\u0430\u0434\u0435\u043D\u0438\u0435 \u2014 \u043A\u0440\u0430\u0441\u043D\u044B\u0439, \u043D\u043E\u043B\u044C \u2014 \u0441\u0435\u0440\u044B\u0439
+const deltaColor = (v: number) =>
+  v > 0
+    ? 'text-emerald-600 dark:text-emerald-400'
+    : v < 0
+      ? 'text-red-500 dark:text-red-400'
+      : 'text-zinc-400 dark:text-zinc-500'
+
 // Цвета линий для договоров (тёплый янтарь + холодный индиго — мягкая, неконфликтная пара)
 const CONTRACT_COLORS = ['#f59e0b', '#6366f1', '#8b5cf6', '#ec4899', '#14b8a6']
 const COLOR_TOTAL = '#10b981'
@@ -188,11 +204,29 @@ export function MegafonDynamicsPage() {
   }, [contractKeys, colorTotal])
 
   // Для таблицы — только месяцы с данными (без пустого «каркаса» графика).
-  // Базовый порядок — хронологический; направление задаёт tableSort.
+  // Считаем помесячное изменение «Итого» (к предыдущему месяцу) по
+  // хронологии, затем разворачиваем по направлению tableSort.
   const tableRows = useMemo(() => {
-    const rows = chartRows.filter(r => r.total != null)
-    return tableSort === 'desc' ? [...rows].reverse() : rows
+    const chrono = chartRows.filter(r => r.total != null)
+    const enriched = chrono.map((r, i): ChartRow & { deltaAbs: number | null; deltaPct: number | null } => {
+      const prev = i > 0 ? (chrono[i - 1].total as number) : null
+      const cur = r.total as number
+      const deltaAbs = prev != null ? cur - prev : null
+      const deltaPct = prev != null && prev !== 0 ? ((cur - prev) / prev) * 100 : null
+      return { ...r, deltaAbs, deltaPct }
+    })
+    return tableSort === 'desc' ? [...enriched].reverse() : enriched
   }, [chartRows, tableSort])
+
+  // Изменение за весь период: первый → последний месяц (хронологически)
+  const periodChange = useMemo(() => {
+    const chrono = chartRows.filter(r => r.total != null)
+    if (chrono.length < 2) return null
+    const first = chrono[0].total as number
+    const last = chrono[chrono.length - 1].total as number
+    const abs = last - first
+    return { abs, pct: first !== 0 ? (abs / first) * 100 : null }
+  }, [chartRows])
 
   return (
     <div>
@@ -342,7 +376,7 @@ export function MegafonDynamicsPage() {
           </div>
 
           {/* Таблица с данными */}
-          <div className="mt-6 mb-6">
+          <div className="mt-6 mb-6 max-w-4xl">
             <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
               <h2 className="text-base font-semibold">Детализация по месяцам</h2>
               <div className="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden text-xs">
@@ -384,6 +418,9 @@ export function MegafonDynamicsPage() {
                       <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-emerald-600 dark:text-emerald-400 h-10">
                         Итого
                       </th>
+                      <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 whitespace-nowrap" title="Изменение «Итого» к предыдущему месяцу">
+                        Изменение
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -406,6 +443,22 @@ export function MegafonDynamicsPage() {
                             {fmtRub(row.total as number)}
                           </div>
                         </td>
+                        <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
+                          <div className="h-[36px] flex items-center justify-end gap-1.5 text-[12px] font-semibold whitespace-nowrap">
+                            {row.deltaAbs == null ? (
+                              <span className="text-zinc-300 dark:text-zinc-600">—</span>
+                            ) : (
+                              <>
+                                <span className={deltaColor(row.deltaAbs)}>{fmtSignedRub(row.deltaAbs)}</span>
+                                {row.deltaPct != null && (
+                                  <span className={`text-[11px] opacity-80 ${deltaColor(row.deltaPct)}`}>
+                                    {fmtSignedPct(row.deltaPct)}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                     {/* Итого */}
@@ -426,6 +479,22 @@ export function MegafonDynamicsPage() {
                       <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
                         <div className="h-[36px] flex items-center justify-end text-[12px] font-bold text-emerald-600 dark:text-emerald-400">
                           {fmtRub(tableRows.reduce((s, r) => s + Number(r.total ?? 0), 0))}
+                        </div>
+                      </td>
+                      <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right" title="Изменение за период: первый → последний месяц">
+                        <div className="h-[36px] flex items-center justify-end gap-1.5 text-[12px] font-bold whitespace-nowrap">
+                          {periodChange == null ? (
+                            <span className="text-zinc-300 dark:text-zinc-600">—</span>
+                          ) : (
+                            <>
+                              <span className={deltaColor(periodChange.abs)}>{fmtSignedRub(periodChange.abs)}</span>
+                              {periodChange.pct != null && (
+                                <span className={`text-[11px] opacity-80 ${deltaColor(periodChange.pct)}`}>
+                                  {fmtSignedPct(periodChange.pct)}
+                                </span>
+                              )}
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
