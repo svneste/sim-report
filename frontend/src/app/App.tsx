@@ -5,11 +5,12 @@ import { AssociationsYearPage } from '../features/associations-report/Associatio
 import { FinancesMegafonPage } from '../features/finances/FinancesMegafonPage'
 import { MegafonDynamicsPage } from '../features/finances/MegafonDynamicsPage'
 import { FinancesCrmPage } from '../features/finances/FinancesCrmPage'
+import { YandexMetricsPage } from '../features/yandex-metrics/YandexMetricsPage'
 import { ThemeToggle } from '../shared/theme/ThemeToggle'
 import { Bx24Guard } from './Bx24Guard'
 import { useCurrentUser } from '../shared/hooks/useCurrentUser'
 
-type Tab = 'sim' | 'associations-day' | 'associations-year' | 'finances-megafon' | 'finances-megafon-dynamics' | 'finances-crm'
+type Tab = 'sim' | 'associations-day' | 'associations-year' | 'finances-megafon' | 'finances-megafon-dynamics' | 'finances-crm' | 'yandex-metrics'
 
 /**
  * Корневой роутинг. Простые табы — без react-router, чтобы не тащить
@@ -117,6 +118,21 @@ export function App() {
                 )}
               </div>
 
+              {/* Аналитика сайтов (Яндекс Метрика) — только для Нестерович Сергея */}
+              {isNesterovich && (
+                <button
+                  type="button"
+                  onClick={() => setTab('yandex-metrics')}
+                  className={`px-3 py-1.5 rounded-md text-sm transition-colors duration-100 ${
+                    tab === 'yandex-metrics'
+                      ? 'text-zinc-900 bg-zinc-100 dark:text-zinc-100 dark:bg-zinc-800'
+                      : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  Аналитика сайтов
+                </button>
+              )}
+
               {/* Финансы — только для Нестерович Сергея */}
               {isNesterovich && (
                 <div
@@ -194,6 +210,7 @@ export function App() {
         {tab === 'finances-megafon'           && <FinancesMegafonPage />}
         {tab === 'finances-megafon-dynamics' && <MegafonDynamicsPage />}
         {tab === 'finances-crm'              && <FinancesCrmPage />}
+        {tab === 'yandex-metrics'            && <YandexMetricsPage />}
       </main>
     </div>
     </Bx24Guard>

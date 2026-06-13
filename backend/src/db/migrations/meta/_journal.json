@@ -43,6 +43,13 @@
       "when": 1776300000000,
       "tag": "0005_megafon_uploads",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1781000000000,
+      "tag": "0006_yandex_sites",
+      "breakpoints": true
     }
   ]
 }

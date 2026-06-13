@@ -19,6 +19,11 @@ const schema = z.object({
 
   SYNC_CRON: z.string().default('*/15 * * * *'),
 
+  // OAuth-токен Яндекс Метрики (scope metrika:read). Один на все счётчики —
+  // предполагается, что все сайты под одним аккаунтом Яндекса.
+  // Получается разово на oauth.yandex.ru. Пустой → модуль аналитики отдаёт 400.
+  YANDEX_OAUTH_TOKEN: z.string().default(''),
+
   // Домен портала Bitrix24, в iframe которого живёт SPA. Используется
   // и как whitelist для CSP frame-ancestors в nginx, и как URL для
   // верификации auth-token из BX24.js на бэке (см. b24-auth.hook).

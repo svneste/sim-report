@@ -162,7 +162,25 @@ export const megafonUploads = pgTable('megafon_uploads', {
   uploadedAt:  timestamp('uploaded_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
+/**
+ * Сайты для аналитики Яндекс Метрики. Управляются через UI виджета
+ * (вкладка «Аналитика сайтов»). Один OAuth-токен Яндекса (из config) даёт
+ * доступ ко всем счётчикам — здесь храним только привязку счётчика к сайту
+ * и опциональную привязку к amoCRM для подсчёта сделок.
+ */
+export const yandexSites = pgTable('yandex_sites', {
+  id:                bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  name:              text('name').notNull(),                              // «МегаФон Корпоративный»
+  counterId:         bigint('counter_id', { mode: 'number' }).notNull(),  // ID счётчика Метрики
+  goalId:            bigint('goal_id', { mode: 'number' }),               // цель «заявка» в Метрике (nullable)
+  domain:            text('domain'),                                      // megafon-corporate.ru — для matching сделок (nullable)
+  amocrmPipelineId:  bigint('amocrm_pipeline_id', { mode: 'number' }),    // воронка для подсчёта сделок (nullable)
+  amocrmPageFieldId: bigint('amocrm_page_field_id', { mode: 'number' }),  // кастом-поле сделки с URL/доменом (nullable)
+  createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
 export type AmocrmUser     = typeof amocrmUsers.$inferSelect
 export type AmocrmDeal     = typeof amocrmDeals.$inferSelect
 export type SimRegistration = typeof simRegistrations.$inferSelect
 export type LeadStatusTransition = typeof leadStatusTransitions.$inferSelect
+export type YandexSite     = typeof yandexSites.$inferSelect
