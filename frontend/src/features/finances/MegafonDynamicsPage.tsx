@@ -45,15 +45,6 @@ function addMonths(period: number, delta: number): number {
   return Math.floor(idx / 12) * 100 + (idx % 12) + 1
 }
 
-// Текущий период YYYYMM по локальной дате
-function currentPeriod(): number {
-  const d = new Date()
-  return d.getFullYear() * 100 + (d.getMonth() + 1)
-}
-
-// Окно графика — скользящие 12 месяцев (год)
-const WINDOW_MONTHS = 12
-
 const fmtK = (v: number) => {
   if (Math.abs(v) >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`
   if (Math.abs(v) >= 1_000) return `${Math.round(v / 1_000)}K`
@@ -85,6 +76,8 @@ export function MegafonDynamicsPage() {
   const [hidden, setHidden] = useState<Set<string>>(() => new Set())
   // Сортировка таблицы: 'desc' — сначала новые, 'asc' — сначала старые
   const [tableSort, setTableSort] = useState<'asc' | 'desc'>('asc')
+  // Выбранный год графика (null до загрузки данных — затем последний год с данными)
+  const [year, setYear] = useState<number | null>(null)
   const toggleSeries = useCallback((id: string) => {
     setHidden(prev => {
       const next = new Set(prev)
@@ -108,14 +101,16 @@ export function MegafonDynamicsPage() {
 
   useEffect(() => { void load() }, [load])
 
-  // Преобразуем данные в окно из 12 месяцев (пустые месяцы — null, чтобы линия
-  // рвалась, а не падала в ноль; ось при этом показывает весь год-«каркас»).
-  const { chartRows, contractKeys } = useMemo(() => {
-    if (!data) return { chartRows: [] as ChartRow[], contractKeys: [] as MegafonDynamics['contracts'] }
+  // Агрегаты по периодам + список годов, за которые есть данные.
+  const { byPeriod, contractKeys, years } = useMemo(() => {
+    const empty = {
+      byPeriod: new Map<number, { total: number; contracts: Record<string, number> }>(),
+      contractKeys: [] as MegafonDynamics['contracts'],
+      years: [] as number[],
+    }
+    if (!data) return empty
 
     const keys = data.contracts
-
-    // Агрегаты по периодам
     const byPeriod = new Map<number, { total: number; contracts: Record<string, number> }>()
     for (const row of data.rows) {
       let e = byPeriod.get(row.period)
@@ -125,12 +120,23 @@ export function MegafonDynamicsPage() {
       e.total += reward
     }
 
-    // Окно заканчивается на текущем месяце (или на последнем месяце с данными,
-    // если он почему-то позже), длиной WINDOW_MONTHS назад.
-    const withData = Array.from(byPeriod.keys())
-    const latest = withData.length ? Math.max(...withData) : currentPeriod()
-    const end = Math.max(currentPeriod(), latest)
-    const start = addMonths(end, -(WINDOW_MONTHS - 1))
+    const years = Array.from(new Set(Array.from(byPeriod.keys()).map(p => Math.floor(p / 100))))
+      .sort((a, b) => a - b)
+
+    return { byPeriod, contractKeys: keys, years }
+  }, [data])
+
+  // По умолчанию — последний год с данными (можно листать стрелками к прошлым).
+  useEffect(() => {
+    if (year == null && years.length) setYear(years[years.length - 1])
+  }, [years, year])
+
+  // Строки графика — весь выбранный год, январь→декабрь (пустые месяцы — null,
+  // чтобы линия рвалась, а не падала в ноль; ось показывает весь год-«каркас»).
+  const chartRows = useMemo(() => {
+    if (year == null) return [] as ChartRow[]
+    const start = year * 100 + 1
+    const end = year * 100 + 12
 
     const rows: ChartRow[] = []
     for (let p = start; p <= end; p = addMonths(p, 1)) {
@@ -141,14 +147,13 @@ export function MegafonDynamicsPage() {
         fullLabel: periodFullLabel(p),
         total: e ? e.total : null,
       }
-      for (const k of keys) {
+      for (const k of contractKeys) {
         row[`contract_${k.key}`] = e ? (e.contracts[k.key] ?? 0) : null
       }
       rows.push(row)
     }
-
-    return { chartRows: rows, contractKeys: keys }
-  }, [data])
+    return rows
+  }, [byPeriod, contractKeys, year])
 
   const colorTotal = COLOR_TOTAL
   const colorAxis = isDark ? '#71717a' : '#a1a1aa'
@@ -179,6 +184,29 @@ export function MegafonDynamicsPage() {
     <div>
       <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
         <h1 className="text-xl font-semibold">Финансы · МегаФон · Динамика</h1>
+        {year != null && years.length > 0 && (
+          <div className="inline-flex items-center rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden text-sm">
+            <button
+              onClick={() => setYear(y => (y != null ? y - 1 : y))}
+              disabled={year <= years[0]}
+              title="Предыдущий год"
+              className="px-2.5 h-8 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+            >
+              ‹
+            </button>
+            <span className="px-3 h-8 flex items-center font-medium tabular-nums border-x border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100">
+              {year}
+            </span>
+            <button
+              onClick={() => setYear(y => (y != null ? y + 1 : y))}
+              disabled={year >= years[years.length - 1]}
+              title="Следующий год"
+              className="px-2.5 h-8 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+            >
+              ›
+            </button>
+          </div>
+        )}
       </div>
 
       {error && (
