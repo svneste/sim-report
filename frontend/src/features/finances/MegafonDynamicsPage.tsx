@@ -277,10 +277,10 @@ export function MegafonDynamicsPage() {
   }, [chartRows, contractKeys])
 
   // Прогноз на 3 месяца вперёд. Строится по ВСЕЙ истории (не по видимому окну),
-  // от последнего фактического месяца. Темп роста — геометрическое среднее
-  // месячных приростов за последние HORIZON_BASIS мес, отдельно по каждому
-  // договору; «Итого» = сумма прогнозов договоров. Сложный процент: каждый
-  // следующий месяц = предыдущий × средний темп.
+  // от последнего фактического месяца. Берём СРЕДНИЙ месячный прирост в рублях
+  // за последние BASIS мес (арифметическое среднее месячных приростов) отдельно
+  // по каждому договору и прибавляем его линейно. «Итого» = сумма прогнозов
+  // договоров. Линейная модель консервативнее сложного процента — не «разгоняет».
   const forecast = useMemo(() => {
     const periods = Array.from(byPeriod.keys()).sort((a, b) => a - b)
     if (periods.length < 3) return null // мало истории для осмысленного прогноза
@@ -294,30 +294,27 @@ export function MegafonDynamicsPage() {
     }
 
     const HORIZON = 3
-    const BASIS = 12 // окно для оценки среднего темпа (последние N приростов)
+    const BASIS = 6 // окно для оценки среднего прироста (последние N месяцев)
 
-    // Геометрическое среднее месячных приростов (учитываем только пары, где оба
-    // значения > 0 — иначе ratio не определён / шумит на старте базы).
-    const growthOf = (id: string): number => {
-      const ratios: number[] = []
+    // Средний месячный прирост в рублях за последние BASIS приростов
+    const avgStepOf = (id: string): number => {
+      const deltas: number[] = []
       for (let i = 1; i < periods.length; i++) {
-        const prev = valAt(periods[i - 1], id)
-        const cur = valAt(periods[i], id)
-        if (prev > 0 && cur > 0) ratios.push(cur / prev)
+        deltas.push(valAt(periods[i], id) - valAt(periods[i - 1], id))
       }
-      const tail = ratios.slice(-BASIS)
-      if (tail.length === 0) return 1
-      return Math.exp(tail.reduce((s, r) => s + Math.log(r), 0) / tail.length)
+      const tail = deltas.slice(-BASIS)
+      if (tail.length === 0) return 0
+      return tail.reduce((s, d) => s + d, 0) / tail.length
     }
 
-    const growth: Record<string, number> = {}
-    for (const id of contractIds) growth[id] = growthOf(id)
+    const step: Record<string, number> = {}
+    for (const id of contractIds) step[id] = avgStepOf(id)
 
     const lastP = periods[periods.length - 1]
     const lastVals: Record<string, number> = { total: valAt(lastP, 'total') }
     for (const id of contractIds) lastVals[id] = valAt(lastP, id)
 
-    // Прогнозные месяцы со сложным процентом + дельта к предыдущему месяцу
+    // Прогнозные месяцы: линейная экстраполяция + дельта к предыдущему месяцу
     const rows: Array<{ period: number; fullLabel: string; byId: Record<string, number>; deltas: Record<string, Delta> }> = []
     let prevVals = lastVals
     for (let h = 1; h <= HORIZON; h++) {
@@ -325,7 +322,7 @@ export function MegafonDynamicsPage() {
       const byId: Record<string, number> = {}
       let total = 0
       for (const id of contractIds) {
-        const v = Math.max(0, prevVals[id] * growth[id])
+        const v = Math.max(0, prevVals[id] + step[id])
         byId[id] = v
         total += v
       }
@@ -339,13 +336,13 @@ export function MegafonDynamicsPage() {
       prevVals = byId
     }
 
-    // Средний темп роста для подписи (в %/мес): по каждому договору + «Итого»
-    const growthPct: Record<string, number> = {}
-    for (const id of contractIds) growthPct[id] = (growth[id] - 1) * 100
-    growthPct.total = (growthOf('total') - 1) * 100
+    // Средний прирост для подписи в шапке (в ₽/мес): по договорам + «Итого»
+    const avgStep: Record<string, number> = {}
+    for (const id of contractIds) avgStep[id] = step[id]
+    avgStep.total = avgStepOf('total')
 
     const basisMonths = Math.min(BASIS, periods.length - 1)
-    return { rows, growthPct, basisMonths, lastPeriod: lastP }
+    return { rows, avgStep, basisMonths, lastPeriod: lastP }
   }, [byPeriod, contractKeys])
 
   return (
@@ -589,7 +586,7 @@ export function MegafonDynamicsPage() {
               <div className="flex items-baseline justify-between gap-3 mb-3 flex-wrap">
                 <h2 className="text-base font-semibold">Прогноз на 3 месяца</h2>
                 <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
-                  по среднему темпу за {forecast.basisMonths} мес
+                  по среднему приросту за {forecast.basisMonths} мес
                 </span>
               </div>
               <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm">
@@ -603,15 +600,15 @@ export function MegafonDynamicsPage() {
                         {contractKeys.map((k, i) => (
                           <th key={k.key} className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium h-10 whitespace-nowrap" style={{ color: CONTRACT_COLORS[i % CONTRACT_COLORS.length] }}>
                             <div>{k.label}</div>
-                            <div className={`text-[10px] font-normal ${deltaColor(forecast.growthPct[`contract_${k.key}`] ?? 0)}`}>
-                              {fmtSignedPct(forecast.growthPct[`contract_${k.key}`] ?? 0)}/мес
+                            <div className={`text-[10px] font-normal ${deltaColor(forecast.avgStep[`contract_${k.key}`] ?? 0)}`}>
+                              {fmtSignedRub(forecast.avgStep[`contract_${k.key}`] ?? 0)}/мес
                             </div>
                           </th>
                         ))}
                         <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-emerald-600 dark:text-emerald-400 h-10">
                           <div>Итого</div>
-                          <div className={`text-[10px] font-normal ${deltaColor(forecast.growthPct.total)}`}>
-                            {fmtSignedPct(forecast.growthPct.total)}/мес
+                          <div className={`text-[10px] font-normal ${deltaColor(forecast.avgStep.total)}`}>
+                            {fmtSignedRub(forecast.avgStep.total)}/мес
                           </div>
                         </th>
                       </tr>
@@ -654,7 +651,7 @@ export function MegafonDynamicsPage() {
                 </div>
               </div>
               <p className="mt-2 text-[11px] text-zinc-400 dark:text-zinc-500 leading-snug">
-                Оценка по среднему месячному темпу роста (геометрическое среднее) за последние {forecast.basisMonths} мес, отдельно по каждому договору. «Итого» — сумма прогнозов. Это ориентир, не гарантия.
+                Оценка по среднему месячному приросту в ₽ за последние {forecast.basisMonths} мес, отдельно по каждому договору (линейная модель). «Итого» — сумма прогнозов. Это ориентир, не гарантия.
               </p>
             </div>
           )}
