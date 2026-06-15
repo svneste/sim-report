@@ -101,6 +101,39 @@ const OTHER_KEY = '__other__'
 const RARE_VISITS = 2
 
 /**
+ * Нормализует URL страницы для дедупа: срезает хвостовой слеш в пути.
+ * «https://site.ru/nlstar-int/» и «.../nlstar-int» → один и тот же адрес.
+ * Query (?...) и hash (#...) сохраняются (разные параметры — разные страницы).
+ */
+function normalizePageUrl(url: string): string {
+  const m = url.match(/^([^?#]*)([?#].*)?$/)
+  const tail = m?.[2] ?? ''
+  let path = m?.[1] ?? url
+  if (path.length > 1) path = path.replace(/\/+$/, '') || path
+  return path + tail
+}
+
+/** Сливает страницы с одинаковым нормализованным URL, суммируя метрики. */
+function mergePages(pages: PageRow[]): PageRow[] {
+  const map = new Map<string, PageRow>()
+  for (const p of pages) {
+    const url = normalizePageUrl(p.url)
+    const ex = map.get(url)
+    if (!ex) {
+      map.set(url, { ...p, url })
+    } else {
+      ex.visits       += p.visits
+      ex.visitors     += p.visitors
+      ex.leadsMetrika += p.leadsMetrika
+    }
+  }
+  for (const p of map.values()) {
+    p.conversionMetrika = p.visits > 0 ? (p.leadsMetrika / p.visits) * 100 : 0
+  }
+  return Array.from(map.values())
+}
+
+/**
  * Сводит полный URL к ключу группы — первому сегменту пути («адрес клиента»).
  * Отрезает протокол+домен, query (?...), hash (#...), завершающий слэш, а также
  * «мусорную» пунктуацию по краям сегмента («/akron,» → «akron»).
@@ -252,7 +285,7 @@ export const yandexService = {
 
     const resp = await metrikaRequest<StatDataResponse>(`/stat/v1/data?${params.toString()}`)
 
-    const pages: PageRow[] = resp.data.map(d => {
+    const rawPages: PageRow[] = resp.data.map(d => {
       const visits   = d.metrics[0] ?? 0
       const visitors = d.metrics[1] ?? 0
       const leads    = hasGoal ? (d.metrics[2] ?? 0) : 0
@@ -264,6 +297,8 @@ export const yandexService = {
         conversionMetrika: visits > 0 ? (leads / visits) * 100 : 0,
       }
     })
+    // Схлопываем дубли страниц, отличающиеся только хвостовым слешем (.../x/ и .../x).
+    const pages = mergePages(rawPages)
 
     const tVisits   = resp.totals[0] ?? 0
     const tVisitors = resp.totals[1] ?? 0
