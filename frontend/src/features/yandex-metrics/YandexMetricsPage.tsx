@@ -239,6 +239,7 @@ function PagesTable({ report }: { report: YandexReport }) {
   const siteId = report.site.id
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [query, setQuery]       = useState('')
+  const [sort, setSort]         = useState<SortState>(null)
   // Локальный буфер ручных правок (по slug): и поля ввода, и оптимистичные значения.
   const [edits, setEdits]       = useState<Record<string, ClientMeta>>({})
   // Смена сайта — сбрасываем буфер (slug'и другие); данные снова придут из report.
@@ -287,6 +288,40 @@ function PagesTable({ report }: { report: YandexReport }) {
   // Воронка amoCRM: флаг доступности, число колонок и итоги по всем группам.
   const af = report.amocrmFunnel
   const colCount = 7 + (af ? 7 : 0)
+
+  // Клик по заголовку: новая колонка → убыв., повтор → возр., третий клик → сброс.
+  const onSort = (k: SortKey) => setSort(prev =>
+    prev?.key !== k ? { key: k, dir: 'desc' }
+    : prev.dir === 'desc' ? { key: k, dir: 'asc' }
+    : null)
+
+  // Числовое значение группы для сортировки по выбранной колонке.
+  const sortNum = (g: Group, k: SortKey): number => {
+    const f = g.funnel
+    switch (k) {
+      case 'visitors':     return g.visitors
+      case 'leads':        return af ? (f?.newRequests ?? 0) : g.leadsMetrika
+      case 'conv':         return af ? (g.visitors > 0 ? (f?.newRequests ?? 0) / g.visitors : 0) : g.conversionMetrika
+      case 'advanced':     return f?.advanced ?? 0
+      case 'convAR':       return f && f.newRequests > 0 ? f.advanced / f.newRequests : 0
+      case 'connected':    return f?.connected ?? 0
+      case 'convRC':       return f && f.advanced > 0 ? f.connected / f.advanced : 0
+      case 'connectedNew': return f?.connectedNew ?? 0
+      case 'connectedMnp': return f?.connectedMnp ?? 0
+      case 'lost':         return f?.lost ?? 0
+      default:             return 0
+    }
+  }
+
+  // Отсортированные группы (стабильно копируем перед sort); без сортировки — порядок с бэка.
+  const sortedGroups = sort
+    ? [...groups].sort((a, b) => {
+        const r = sort.key === 'client'
+          ? a.label.localeCompare(b.label, 'ru')
+          : sortNum(a, sort.key) - sortNum(b, sort.key)
+        return sort.dir === 'asc' ? r : -r
+      })
+    : groups
   const funnelTotals: AmoFunnel | null = af
     ? report.groups.reduce<AmoFunnel>((a, g) => ({
         newRequests:  a.newRequests  + (g.funnel?.newRequests  ?? 0),
@@ -336,9 +371,9 @@ function PagesTable({ report }: { report: YandexReport }) {
           <table className="border-collapse w-full">
             <thead>
               <tr>
-                <th className="sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-900 border-b border-r border-zinc-200 dark:border-zinc-800 px-4 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10">
-                  Клиент / страница
-                </th>
+                <SortTh
+                  k="client" label="Клиент / страница" sort={sort} onSort={onSort}
+                  className="sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-900 border-b border-r border-zinc-200 dark:border-zinc-800 px-4 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10" />
                 <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-56">
                   Название
                 </th>
@@ -348,38 +383,38 @@ function PagesTable({ report }: { report: YandexReport }) {
                 <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-40">
                   Дата запуска
                 </th>
-                <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-28">
-                  Посетители
-                </th>
-                <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-28">
-                  Заявки
-                </th>
-                <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-28">
-                  Конверсия
-                </th>
+                <SortTh
+                  k="visitors" label="Посетители" sort={sort} onSort={onSort}
+                  className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-28" />
+                <SortTh
+                  k="leads" label="Заявки" sort={sort} onSort={onSort}
+                  className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-28" />
+                <SortTh
+                  k="conv" label="Конверсия" sort={sort} onSort={onSort}
+                  className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-28" />
                 {report.amocrmFunnel && (
                   <>
-                    <th className="border-b border-l-2 border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: клиент откликнулся — сделка прошла дальше «Нового обращения»">
-                      Ответили
-                    </th>
-                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-400 dark:text-zinc-500 h-10 w-20" title="Конверсия: из заявок ответили (Ответили ÷ Заявки)">
-                      Заявка→ответ
-                    </th>
-                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: подключено — дошли до «Договор отправлен» или уже «Успешно»">
-                      Подключено
-                    </th>
-                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-400 dark:text-zinc-500 h-10 w-20" title="Конверсия: из ответивших подключились (Подключено ÷ Ответили)">
-                      Ответ→подкл
-                    </th>
-                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: из подключённых — новые номера (MNP? = нет)">
-                      Подкл. новые
-                    </th>
-                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: из подключённых — переносы номера (MNP? = да)">
-                      Подкл. MNP
-                    </th>
-                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: текущий статус «Не реализовано»">
-                      Отказ
-                    </th>
+                    <SortTh
+                      k="advanced" label="Ответили" title="amoCRM: клиент откликнулся — сделка прошла дальше «Нового обращения»" sort={sort} onSort={onSort}
+                      className="border-b border-l-2 border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" />
+                    <SortTh
+                      k="convAR" label="Заявка→ответ" title="Конверсия: из заявок ответили (Ответили ÷ Заявки)" sort={sort} onSort={onSort}
+                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-400 dark:text-zinc-500 h-10 w-20" />
+                    <SortTh
+                      k="connected" label="Подключено" title="amoCRM: подключено — дошли до «Договор отправлен» или уже «Успешно»" sort={sort} onSort={onSort}
+                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" />
+                    <SortTh
+                      k="convRC" label="Ответ→подкл" title="Конверсия: из ответивших подключились (Подключено ÷ Ответили)" sort={sort} onSort={onSort}
+                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-400 dark:text-zinc-500 h-10 w-20" />
+                    <SortTh
+                      k="connectedNew" label="Подкл. новые" title="amoCRM: из подключённых — новые номера (MNP? = нет)" sort={sort} onSort={onSort}
+                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" />
+                    <SortTh
+                      k="connectedMnp" label="Подкл. MNP" title="amoCRM: из подключённых — переносы номера (MNP? = да)" sort={sort} onSort={onSort}
+                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" />
+                    <SortTh
+                      k="lost" label="Отказ" title="amoCRM: текущий статус «Не реализовано»" sort={sort} onSort={onSort}
+                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" />
                   </>
                 )}
               </tr>
@@ -392,7 +427,7 @@ function PagesTable({ report }: { report: YandexReport }) {
                   </td>
                 </tr>
               )}
-              {groups.map(g => {
+              {sortedGroups.map(g => {
                 const isOpen = q ? true : expanded.has(g.key)
                 const expandable = g.pages.length > 1
                 return (
@@ -524,6 +559,43 @@ function PagesTable({ report }: { report: YandexReport }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// Колонки, по которым доступна сортировка кликом по заголовку.
+type SortKey =
+  | 'client' | 'visitors' | 'leads' | 'conv'
+  | 'advanced' | 'convAR' | 'connected' | 'convRC' | 'connectedNew' | 'connectedMnp' | 'lost'
+type SortState = { key: SortKey; dir: 'asc' | 'desc' } | null
+
+/** Индикатор сортировки: активная стрелка ▲/▼, иначе бледный ▼ при наведении на заголовок. */
+function SortArrow({ active, dir }: { active: boolean; dir: 'asc' | 'desc' | null }) {
+  return (
+    <span className={`text-[8px] leading-none ${active
+      ? 'opacity-100 text-zinc-700 dark:text-zinc-200'
+      : 'opacity-0 group-hover/th:opacity-40'}`}>
+      {dir === 'asc' ? '▲' : '▼'}
+    </span>
+  )
+}
+
+/** Кликабельный заголовок-колонка с индикатором сортировки. */
+function SortTh({ k, label, className, title, sort, onSort }: {
+  k: SortKey; label: string; className: string; title?: string
+  sort: SortState; onSort: (k: SortKey) => void
+}) {
+  const active = sort?.key === k
+  return (
+    <th
+      title={title}
+      onClick={() => onSort(k)}
+      className={`${className} cursor-pointer select-none group/th transition-colors hover:text-zinc-700 dark:hover:text-zinc-200`}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <SortArrow active={active} dir={active ? sort!.dir : null} />
+      </span>
+    </th>
   )
 }
 
