@@ -338,6 +338,22 @@ function PagesTable({ report }: { report: YandexReport }) {
                             </svg>
                           </span>
                           <span className="truncate" title={g.label}>{g.label}</span>
+                          {g.key !== '__other__' && g.pages[0] && (
+                            <a
+                              href={g.pages[0].url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              title={`Открыть ${g.pages[0].url}`}
+                              className="shrink-0 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                <polyline points="15 3 21 3 21 9" />
+                                <line x1="10" y1="14" x2="21" y2="3" />
+                              </svg>
+                            </a>
+                          )}
                           {expandable && (
                             <span className="shrink-0 text-[11px] text-zinc-400 dark:text-zinc-500 font-normal">
                               {g.pages.length} стр.
