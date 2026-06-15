@@ -359,8 +359,8 @@ function PagesTable({ report }: { report: YandexReport }) {
                 </th>
                 {report.amocrmFunnel && (
                   <>
-                    <th className="border-b border-l-2 border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: перешли дальше «Нового обращения» (хоть на один следующий этап)">
-                      Перешло
+                    <th className="border-b border-l-2 border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: клиент откликнулся — сделка прошла дальше «Нового обращения»">
+                      Ответили
                     </th>
                     <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: подключено — дошли до «Договор отправлен» или уже «Успешно»">
                       Подключено
