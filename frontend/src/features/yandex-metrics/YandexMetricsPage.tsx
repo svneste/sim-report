@@ -34,12 +34,27 @@ function defaultFrom(): string {
   return ymd(d)
 }
 
+// Сентинел «Общее» (агрегация по всем сайтам) — ни у одного реального сайта нет id < 0.
+const AGG = -1
+
+/** Сводные KPI по всем сайтам: посетители, заявки, конверсия, подключено. */
+function aggKpi(reports: YandexReport[]) {
+  let visitors = 0, leads = 0, connected = 0
+  for (const r of reports) {
+    visitors  += r.totals.visitors
+    leads     += r.amocrmFunnel ? amoTotals(r).newRequests : (r.site.hasGoal ? r.totals.leadsMetrika : 0)
+    connected += r.amocrmFunnel ? amoTotals(r).connected   : (r.amocrm.configured ? (r.amocrm.deals ?? 0) : 0)
+  }
+  return { visitors, leads, connected, conv: visitors > 0 ? leads / visitors * 100 : null }
+}
+
 export function YandexMetricsPage() {
   const [sites, setSites]       = useState<YandexSite[]>([])
   const [siteId, setSiteId]     = useState<number | undefined>()
   const [from, setFrom]         = useState(defaultFrom())
   const [to, setTo]             = useState(ymd(new Date()))
   const [report, setReport]     = useState<YandexReport | null>(null)
+  const [reports, setReports]   = useState<YandexReport[] | null>(null) // режим «Общее»
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState<string | null>(null)
   const [manageOpen, setManageOpen] = useState(false)
@@ -60,8 +75,28 @@ export function YandexMetricsPage() {
     setError(null)
     try {
       setReport(await fetchYandexReport(id, f, t))
+      setReports(null)
     } catch (e) {
       setReport(null)
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // Режим «Общее»: грузим отчёты всех сайтов параллельно (устойчиво к падению части).
+  const loadAll = useCallback(async (list: YandexSite[], f: string, t: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const settled = await Promise.allSettled(list.map(s => fetchYandexReport(s.id, f, t)))
+      const ok = settled.flatMap(s => s.status === 'fulfilled' ? [s.value] : [])
+      setReports(ok)
+      setReport(null)
+      const failed = settled.length - ok.length
+      setError(failed > 0 ? `Не удалось загрузить ${failed} из ${list.length} сайтов` : null)
+    } catch (e) {
+      setReports(null)
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
@@ -80,8 +115,9 @@ export function YandexMetricsPage() {
   }, [loadSites, loadReport])
 
   function applyFilters(id: number | undefined, f: string, t: string) {
-    if (id == null) { setReport(null); return }
-    void loadReport(id, f, t)
+    if (id == null) { setReport(null); setReports(null); return }
+    if (id === AGG) void loadAll(sites, f, t)
+    else void loadReport(id, f, t)
   }
 
   return (
@@ -92,10 +128,11 @@ export function YandexMetricsPage() {
           {/* Выбор сайта */}
           {sites.length > 0 && (
             <select
-              value={siteId ?? ''}
-              onChange={e => { const id = Number(e.target.value); setSiteId(id); applyFilters(id, from, to) }}
+              value={siteId === AGG ? 'all' : String(siteId ?? '')}
+              onChange={e => { const v = e.target.value; const id = v === 'all' ? AGG : Number(v); setSiteId(id); applyFilters(id, from, to) }}
               className="h-8 px-2 rounded-lg border border-zinc-200 bg-white text-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
             >
+              {sites.length > 1 && <option value="all">Общее (все сайты)</option>}
               {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           )}
@@ -202,6 +239,29 @@ export function YandexMetricsPage() {
         </>
       )}
 
+      {/* Режим «Общее»: сводные KPI + таблица по каждому сайту отдельно */}
+      {!loading && reports && (() => {
+        const k = aggKpi(reports)
+        return (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+              <Kpi label="Посетителей" value={num(k.visitors)} />
+              <Kpi label="Заявки" value={num(k.leads)} color="text-blue-600 dark:text-blue-400" />
+              <Kpi label="Конверсия" value={k.conv == null ? '—' : pct(k.conv)} color="text-emerald-600 dark:text-emerald-400" />
+              <Kpi label="Подключено" value={num(k.connected)} color="text-violet-600 dark:text-violet-400" />
+            </div>
+
+            {reports.length === 0 && (
+              <div className="text-center py-16 text-sm text-zinc-500 dark:text-zinc-400">
+                Нет данных по сайтам за выбранный период.
+              </div>
+            )}
+
+            {reports.map(r => <PagesTable key={r.site.id} report={r} siteLabel={r.site.name} />)}
+          </>
+        )
+      })()}
+
       {/* Управление сайтами */}
       {manageOpen && (
         <ManageSitesModal
@@ -235,7 +295,7 @@ function Kpi({ label, value, hint, color }: { label: string; value: string; hint
 
 // ===================== Таблица по страницам =====================
 
-function PagesTable({ report }: { report: YandexReport }) {
+function PagesTable({ report, siteLabel }: { report: YandexReport; siteLabel?: string }) {
   const siteId = report.site.id
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [query, setQuery]       = useState('')
@@ -245,7 +305,16 @@ function PagesTable({ report }: { report: YandexReport }) {
   // Смена сайта — сбрасываем буфер (slug'и другие); данные снова придут из report.
   useEffect(() => { setEdits({}) }, [siteId])
 
-  if (report.groups.length === 0) return null
+  if (report.groups.length === 0) {
+    if (!siteLabel) return null
+    // В режиме «Общее» показываем заголовок сайта даже без данных.
+    return (
+      <div className="mb-6">
+        <h2 className="text-base font-semibold mb-2">{siteLabel}</h2>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">Нет данных за выбранный период.</p>
+      </div>
+    )
+  }
   const hasGoal = report.site.hasGoal
 
   const toggle = (key: string) => setExpanded(prev => {
@@ -336,7 +405,7 @@ function PagesTable({ report }: { report: YandexReport }) {
   return (
     <div className="mb-6">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-base font-semibold">По клиентам</h2>
+        <h2 className="text-base font-semibold">{siteLabel ? `${siteLabel} · по клиентам` : 'По клиентам'}</h2>
         <div className="flex items-center gap-3">
           <div className="relative">
             <input
