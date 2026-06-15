@@ -286,7 +286,7 @@ function PagesTable({ report }: { report: YandexReport }) {
 
   // Воронка amoCRM: флаг доступности, число колонок и итоги по всем группам.
   const af = report.amocrmFunnel
-  const colCount = 7 + (af ? 5 : 0)
+  const colCount = 7 + (af ? 7 : 0)
   const funnelTotals: AmoFunnel | null = af
     ? report.groups.reduce<AmoFunnel>((a, g) => ({
         newRequests:  a.newRequests  + (g.funnel?.newRequests  ?? 0),
@@ -362,8 +362,14 @@ function PagesTable({ report }: { report: YandexReport }) {
                     <th className="border-b border-l-2 border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: клиент откликнулся — сделка прошла дальше «Нового обращения»">
                       Ответили
                     </th>
+                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-400 dark:text-zinc-500 h-10 w-20" title="Конверсия: из заявок ответили (Ответили ÷ Заявки)">
+                      Заявка→ответ
+                    </th>
                     <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: подключено — дошли до «Договор отправлен» или уже «Успешно»">
                       Подключено
+                    </th>
+                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-400 dark:text-zinc-500 h-10 w-20" title="Конверсия: из ответивших подключились (Подключено ÷ Ответили)">
+                      Ответ→подкл
                     </th>
                     <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: из подключённых — новые номера (MNP? = нет)">
                       Подкл. новые
@@ -542,17 +548,22 @@ function FCell({ value, h, first, className }: { value: string; h: number; first
   )
 }
 
-/** Пять ячеек воронки amoCRM: Перешло · Подключено · Подкл. новые · Подкл. MNP · Отказ. */
+/** Конверсия между этапами воронки: numer ÷ denom в %, '—' если делить не на что. */
+const fconv = (numer: number, denom: number) => denom > 0 ? pct(numer / denom * 100) : '—'
+
+/** Семь ячеек воронки amoCRM: Ответили · Заявка→ответ · Подключено · Ответ→подкл · Подкл. новые · Подкл. MNP · Отказ. */
 function FunnelCells({ f, h, blank, bold }: { f: AmoFunnel | null; h: number; blank?: boolean; bold?: boolean }) {
-  if (blank) return <>{[0, 1, 2, 3, 4].map(i => <FCell key={i} first={i === 0} value="" h={h} />)}</>
+  if (blank) return <>{[0, 1, 2, 3, 4, 5, 6].map(i => <FCell key={i} first={i === 0} value="" h={h} />)}</>
   const b = bold ? ' font-bold' : ''
   return (
     <>
-      <FCell first value={f ? num(f.advanced) : '—'}     h={h} className={'text-zinc-600 dark:text-zinc-400' + b} />
-      <FCell       value={f ? num(f.connected) : '—'}    h={h} className={'text-emerald-600 dark:text-emerald-400 font-semibold' + b} />
-      <FCell       value={f ? num(f.connectedNew) : '—'} h={h} className={'text-emerald-700/80 dark:text-emerald-300/80' + b} />
-      <FCell       value={f ? num(f.connectedMnp) : '—'} h={h} className={'text-cyan-600 dark:text-cyan-400' + b} />
-      <FCell       value={f ? num(f.lost) : '—'}         h={h} className={'text-rose-500 dark:text-rose-400' + b} />
+      <FCell first value={f ? num(f.advanced) : '—'}                  h={h} className={'text-zinc-600 dark:text-zinc-400' + b} />
+      <FCell       value={f ? fconv(f.advanced, f.newRequests) : '—'} h={h} className={'text-zinc-400 dark:text-zinc-500' + b} />
+      <FCell       value={f ? num(f.connected) : '—'}                 h={h} className={'text-emerald-600 dark:text-emerald-400 font-semibold' + b} />
+      <FCell       value={f ? fconv(f.connected, f.advanced) : '—'}   h={h} className={'text-zinc-400 dark:text-zinc-500' + b} />
+      <FCell       value={f ? num(f.connectedNew) : '—'}              h={h} className={'text-emerald-700/80 dark:text-emerald-300/80' + b} />
+      <FCell       value={f ? num(f.connectedMnp) : '—'}              h={h} className={'text-cyan-600 dark:text-cyan-400' + b} />
+      <FCell       value={f ? num(f.lost) : '—'}                      h={h} className={'text-rose-500 dark:text-rose-400' + b} />
     </>
   )
 }
