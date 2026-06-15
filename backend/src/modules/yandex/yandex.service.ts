@@ -1,8 +1,24 @@
 import { db } from '../../db/client.js'
-import { yandexSites, yandexClientNames } from '../../db/schema.js'
+import { yandexSites, yandexClientNames, leadStatusTransitions } from '../../db/schema.js'
 import { config } from '../../core/config.js'
 import { logger } from '../../core/logger.js'
-import { eq, and, asc, sql } from 'drizzle-orm'
+import { eq, and, asc, sql, inArray } from 'drizzle-orm'
+
+// ===================== amoCRM: воронка F&F МегаФон =====================
+// Pipeline синкается из config.AMOCRM_PIPELINE_ID (= 4298623). ID этапов ниже
+// специфичны для этой воронки (сверено по API /leads/pipelines/.../statuses).
+const AMO_UTM_FIELD_ID        = 485305     // кастом-поле utm_referrer (URL источника заявки)
+const AMO_STAGE_UNSORTED      = 40162663   // «Неразобранное»
+const AMO_STAGE_NEW           = 40162666   // «Новое обращение» (входной этап)
+const AMO_STAGE_CONTRACT_SENT = 56807310   // «Договор отправлен»
+const AMO_STATUS_WON          = 142        // «Успешно реализовано» (системный)
+const AMO_STATUS_LOST         = 143        // «Закрыто и не реализовано» (системный)
+
+/** Извлекает строки из результата db.execute (postgres-js возвращает массив или {rows}). */
+function rowsOf<T>(res: unknown): T[] {
+  const r = (res as { rows?: T[] }).rows
+  return Array.isArray(r) ? r : Array.isArray(res) ? (res as T[]) : []
+}
 
 // ===================== Яндекс Метрика API =====================
 
@@ -72,6 +88,15 @@ export interface PageRow {
   conversionMetrika: number    // leadsMetrika / visits * 100
 }
 
+/** Воронка amoCRM по источнику (slug): сделки воронки F&F МегаФон с utm_referrer этого клиента. */
+export interface AmoFunnel {
+  newRequests:  number   // всего заявок с источника (вошли в воронку — «Новое обращение»)
+  advanced:     number   // перешли дальше «Нового обращения» (хоть на один следующий этап)
+  contractSent: number   // дошли до «Договор отправлен» (по истории переходов)
+  won:          number   // текущий статус «Успешно реализовано»
+  lost:         number   // текущий статус «Не реализовано»
+}
+
 /** Группа страниц по первому сегменту пути (= «адрес клиента», напр. /rzd). */
 export interface PageGroup {
   key:               string    // 'rzd'
@@ -83,6 +108,7 @@ export interface PageGroup {
   visits:            number
   leadsMetrika:      number
   conversionMetrika: number
+  funnel:            AmoFunnel | null  // воронка amoCRM по этому источнику (null — данных нет)
   pages:             PageRow[]  // подстраницы, отсортированы по визитам
 }
 
@@ -93,6 +119,7 @@ export interface YandexReport {
   totals:  { visitors: number; visits: number; leadsMetrika: number; conversionMetrika: number }
   groups:  PageGroup[]
   amocrm:  { configured: boolean; deals: number | null }  // site-level число сделок (если привязка настроена)
+  amocrmFunnel: boolean  // доступна ли воронка amoCRM по источникам (есть домен сайта)
 }
 
 /** Ключ бакета «Прочее» — куда сводятся малотрафиковые/ошибочные адреса. */
@@ -168,7 +195,7 @@ function groupPages(pages: PageRow[]): PageGroup[] {
     const { key, label } = groupKeyOf(p.url)
     let g = map.get(key)
     if (!g) {
-      g = { key, label, name: null, createdDate: null, launchDate: null, visitors: 0, visits: 0, leadsMetrika: 0, conversionMetrika: 0, pages: [] }
+      g = { key, label, name: null, createdDate: null, launchDate: null, visitors: 0, visits: 0, leadsMetrika: 0, conversionMetrika: 0, funnel: null, pages: [] }
       map.set(key, g)
     }
     g.visitors     += p.visitors
@@ -196,7 +223,7 @@ function groupPages(pages: PageRow[]): PageGroup[] {
       key: OTHER_KEY,
       label: `Прочее (редкие адреса · ${rare.length})`,
       name: null, createdDate: null, launchDate: null,
-      visitors: 0, visits: 0, leadsMetrika: 0, conversionMetrika: 0, pages: [],
+      visitors: 0, visits: 0, leadsMetrika: 0, conversionMetrika: 0, funnel: null, pages: [],
     }
     for (const g of rare) {
       bucket.visitors     += g.visitors
@@ -311,12 +338,16 @@ export const yandexService = {
     // Ручные данные клиентов (по slug, независимы от периода) — подмешиваем в группы.
     const meta = await db.select().from(yandexClientNames).where(eq(yandexClientNames.siteId, siteId))
     const metaBySlug = new Map(meta.map(m => [m.slug, m]))
+    // Воронка amoCRM по источникам (utm_referrer), сгруппированная по тому же slug.
+    const funnelBySlug = await this.amocrmFunnelBySlug(site, range.from, range.to)
+
     const groups = groupPages(pages)
     for (const g of groups) {
       const m = metaBySlug.get(g.key)
       g.name        = m?.name ?? null
       g.createdDate = m?.createdDate ?? null
       g.launchDate  = m?.launchDate ?? null
+      g.funnel      = funnelBySlug.get(g.key) ?? null
     }
 
     return {
@@ -331,7 +362,88 @@ export const yandexService = {
       },
       groups,
       amocrm,
+      amocrmFunnel: site.domain != null,
     }
+  },
+
+  /**
+   * Строит воронку amoCRM по источникам (utm_referrer) для сайта, сгруппированную
+   * по первому сегменту пути (тот же slug, что у групп Метрики).
+   * Берёт сделки воронки F&F МегаФон, созданные в [from, to], чей utm_referrer
+   * указывает на домен сайта. «Доходило когда-либо» считается по объединению
+   * текущего статуса и истории переходов (lead_status_transitions).
+   */
+  async amocrmFunnelBySlug(
+    site: { domain: string | null },
+    from: string,
+    to: string,
+  ): Promise<Map<string, AmoFunnel>> {
+    const result = new Map<string, AmoFunnel>()
+    if (!site.domain) return result
+
+    // 1. Сделки воронки за период + значение utm_referrer.
+    const dealsRes = await db.execute(sql`
+      SELECT d.id::text AS id, d.status_id::text AS status_id, ref.url AS url
+      FROM amocrm_deals d
+      LEFT JOIN LATERAL (
+        SELECT v->>'value' AS url
+        FROM jsonb_array_elements(CASE WHEN jsonb_typeof(d.raw->'custom_fields_values') = 'array'
+                                       THEN d.raw->'custom_fields_values' ELSE '[]'::jsonb END) cf
+        CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(cf->'values') = 'array'
+                                                     THEN cf->'values' ELSE '[]'::jsonb END) v
+        WHERE (cf->>'field_id')::bigint = ${AMO_UTM_FIELD_ID}
+        LIMIT 1
+      ) ref ON true
+      WHERE d.pipeline_id = ${config.AMOCRM_PIPELINE_ID}
+        AND d.created_at >= ${from}::date
+        AND d.created_at < (${to}::date + interval '1 day')
+    `)
+    const dealRows = rowsOf<{ id: string; status_id: string; url: string | null }>(dealsRes)
+
+    // Фильтр по домену сайта + извлечение slug (как у групп Метрики).
+    const host = site.domain.toLowerCase()
+    interface DealInfo { slug: string; status: number; touched: Set<number> }
+    const deals = new Map<string, DealInfo>()
+    for (const r of dealRows) {
+      if (!r.url) continue
+      const m = String(r.url).toLowerCase().match(/^https?:\/\/([^/]+)/)
+      if (!m) continue
+      const h = m[1].replace(/^www\./, '')
+      if (h !== host && !h.endsWith('.' + host)) continue
+      const status = Number(r.status_id)
+      deals.set(r.id, { slug: groupKeyOf(String(r.url)).key, status, touched: new Set([status]) })
+    }
+    if (deals.size === 0) return result
+
+    // 2. История переходов для этих сделок — добавляем все статусы, через которые прошли.
+    const ids = Array.from(deals.keys(), Number)
+    const trans = await db
+      .select({ dealId: leadStatusTransitions.dealId, statusId: leadStatusTransitions.statusId })
+      .from(leadStatusTransitions)
+      .where(inArray(leadStatusTransitions.dealId, ids))
+    for (const t of trans) {
+      deals.get(String(t.dealId))?.touched.add(Number(t.statusId))
+    }
+
+    // 3. Агрегируем по slug.
+    const ensure = (slug: string): AmoFunnel => {
+      let f = result.get(slug)
+      if (!f) { f = { newRequests: 0, advanced: 0, contractSent: 0, won: 0, lost: 0 }; result.set(slug, f) }
+      return f
+    }
+    for (const d of deals.values()) {
+      const f = ensure(d.slug)
+      f.newRequests++
+      // «перешли дальше» — коснулись чего-то, кроме входных этапов и отказа.
+      const advanced = [...d.touched].some(
+        s => s !== AMO_STAGE_UNSORTED && s !== AMO_STAGE_NEW && s !== AMO_STATUS_LOST,
+      )
+      if (advanced) f.advanced++
+      if (d.touched.has(AMO_STAGE_CONTRACT_SENT)) f.contractSent++
+      if (d.status === AMO_STATUS_WON)  f.won++
+      if (d.status === AMO_STATUS_LOST) f.lost++
+    }
+    return result
   },
 
   /**

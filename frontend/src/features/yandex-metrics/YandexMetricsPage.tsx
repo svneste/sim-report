@@ -7,6 +7,7 @@ import {
   fetchYandexReport,
   setClientMeta,
   type ClientMeta,
+  type AmoFunnel,
   type YandexSite,
   type SiteForm,
   type YandexReport,
@@ -264,6 +265,19 @@ function PagesTable({ report }: { report: YandexReport }) {
         g.pages.some(p => p.url.toLowerCase().includes(q)))
     : report.groups
 
+  // Воронка amoCRM: флаг доступности, число колонок и итоги по всем группам.
+  const af = report.amocrmFunnel
+  const colCount = 7 + (af ? 5 : 0)
+  const funnelTotals: AmoFunnel | null = af
+    ? report.groups.reduce<AmoFunnel>((a, g) => ({
+        newRequests:  a.newRequests  + (g.funnel?.newRequests  ?? 0),
+        advanced:     a.advanced     + (g.funnel?.advanced     ?? 0),
+        contractSent: a.contractSent + (g.funnel?.contractSent ?? 0),
+        won:          a.won          + (g.funnel?.won          ?? 0),
+        lost:         a.lost         + (g.funnel?.lost         ?? 0),
+      }), { newRequests: 0, advanced: 0, contractSent: 0, won: 0, lost: 0 })
+    : null
+
   return (
     <div className="mb-6">
       <div className="flex items-center justify-between mb-3">
@@ -323,12 +337,31 @@ function PagesTable({ report }: { report: YandexReport }) {
                 <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-28">
                   Конверсия
                 </th>
+                {report.amocrmFunnel && (
+                  <>
+                    <th className="border-b border-l-2 border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: всего заявок с источника (этап «Новое обращение»)">
+                      Обращения
+                    </th>
+                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: перешли дальше «Нового обращения» (хоть на один следующий этап)">
+                      Перешло
+                    </th>
+                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: дошли до этапа «Договор отправлен»">
+                      Договор
+                    </th>
+                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: текущий статус «Успешно реализовано»">
+                      Успешно
+                    </th>
+                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: текущий статус «Не реализовано»">
+                      Отказ
+                    </th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
               {groups.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-[12px] text-zinc-500 dark:text-zinc-400">
+                  <td colSpan={colCount} className="px-4 py-6 text-center text-[12px] text-zinc-500 dark:text-zinc-400">
                     Ничего не найдено по «{query.trim()}»
                   </td>
                 </tr>
@@ -409,6 +442,7 @@ function PagesTable({ report }: { report: YandexReport }) {
                       <Cell value={num(g.visitors)} className="text-zinc-800 dark:text-zinc-200 font-semibold" h={40} />
                       <Cell value={hasGoal ? num(g.leadsMetrika) : '—'} className="text-blue-600 dark:text-blue-400 font-semibold" h={40} />
                       <Cell value={hasGoal ? pct(g.conversionMetrika) : '—'} className="text-emerald-700 dark:text-emerald-300 font-semibold" h={40} />
+                      {af && <FunnelCells f={g.funnel} h={40} />}
                     </tr>
                     {/* Подстраницы */}
                     {isOpen && g.pages.map(p => (
@@ -424,6 +458,7 @@ function PagesTable({ report }: { report: YandexReport }) {
                         <Cell value={num(p.visitors)} className="text-zinc-500 dark:text-zinc-400" h={34} />
                         <Cell value={hasGoal ? num(p.leadsMetrika) : '—'} className="text-blue-500/80 dark:text-blue-400/80" h={34} />
                         <Cell value={hasGoal ? pct(p.conversionMetrika) : '—'} className="text-emerald-600/80 dark:text-emerald-300/80" h={34} />
+                        {af && <FunnelCells f={null} h={34} blank />}
                       </tr>
                     ))}
                   </Fragment>
@@ -440,6 +475,7 @@ function PagesTable({ report }: { report: YandexReport }) {
                 <Cell value={num(report.totals.visitors)} className="text-zinc-900 dark:text-zinc-100 font-bold" h={40} />
                 <Cell value={hasGoal ? num(report.totals.leadsMetrika) : '—'} className="text-blue-600 dark:text-blue-400 font-bold" h={40} />
                 <Cell value={hasGoal ? pct(report.totals.conversionMetrika) : '—'} className="text-emerald-600 dark:text-emerald-400 font-bold" h={40} />
+                {af && <FunnelCells f={funnelTotals} h={40} bold />}
               </tr>
             </tbody>
           </table>
@@ -457,6 +493,31 @@ function Cell({ value, className, h }: { value: string; className?: string; h: n
         {value}
       </div>
     </td>
+  )
+}
+
+/** Ячейка воронки amoCRM (поуже, у первой — усиленная левая граница-разделитель). */
+function FCell({ value, h, first, className }: { value: string; h: number; first?: boolean; className?: string }) {
+  const border = first ? 'border-l-2 border-zinc-300 dark:border-zinc-700' : 'border-l border-zinc-200 dark:border-zinc-800'
+  return (
+    <td className={`${border} px-3 text-right`}>
+      <div className={`flex items-center justify-end text-[12px] ${className ?? ''}`} style={{ height: h }}>{value}</div>
+    </td>
+  )
+}
+
+/** Пять ячеек воронки amoCRM: Обращения · Перешло · Договор · Успешно · Отказ. */
+function FunnelCells({ f, h, blank, bold }: { f: AmoFunnel | null; h: number; blank?: boolean; bold?: boolean }) {
+  if (blank) return <>{[0, 1, 2, 3, 4].map(i => <FCell key={i} first={i === 0} value="" h={h} />)}</>
+  const b = bold ? ' font-bold' : ''
+  return (
+    <>
+      <FCell first value={f ? num(f.newRequests) : '—'} h={h} className={'text-zinc-800 dark:text-zinc-200 font-semibold' + b} />
+      <FCell       value={f ? num(f.advanced) : '—'}     h={h} className={'text-zinc-600 dark:text-zinc-400' + b} />
+      <FCell       value={f ? num(f.contractSent) : '—'} h={h} className={'text-violet-600 dark:text-violet-400' + b} />
+      <FCell       value={f ? num(f.won) : '—'}          h={h} className={'text-emerald-600 dark:text-emerald-400 font-semibold' + b} />
+      <FCell       value={f ? num(f.lost) : '—'}         h={h} className={'text-rose-500 dark:text-rose-400' + b} />
+    </>
   )
 }
 

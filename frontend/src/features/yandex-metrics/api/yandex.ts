@@ -47,6 +47,14 @@ export interface PageRow {
   conversionMetrika: number
 }
 
+export interface AmoFunnel {
+  newRequests:  number   // всего заявок с источника (Новое обращение)
+  advanced:     number   // перешли дальше Нового обращения
+  contractSent: number   // дошли до «Договор отправлен»
+  won:          number   // успешно реализовано
+  lost:         number   // не реализовано
+}
+
 export interface PageGroup {
   key:               string
   label:             string
@@ -57,6 +65,7 @@ export interface PageGroup {
   visitors:          number
   leadsMetrika:      number
   conversionMetrika: number
+  funnel:            AmoFunnel | null // воронка amoCRM по источнику (null — данных нет)
   pages:             PageRow[]
 }
 
@@ -67,6 +76,7 @@ export interface YandexReport {
   totals: { visitors: number; visits: number; leadsMetrika: number; conversionMetrika: number }
   groups: PageGroup[]
   amocrm: { configured: boolean; deals: number | null }
+  amocrmFunnel: boolean   // доступна ли воронка amoCRM по источникам
 }
 
 // ===================== Сайты (CRUD) =====================
