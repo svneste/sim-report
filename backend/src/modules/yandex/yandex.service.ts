@@ -92,12 +92,19 @@ export interface YandexReport {
   amocrm:  { configured: boolean; deals: number | null }  // site-level число сделок (если привязка настроена)
 }
 
+/** Ключ бакета «Прочее» — куда сводятся малотрафиковые/ошибочные адреса. */
+const OTHER_KEY = '__other__'
+/** Группа с числом визитов ≤ этого порога считается «редким/ошибочным» адресом. */
+const RARE_VISITS = 2
+
 /**
  * Сводит полный URL к ключу группы — первому сегменту пути («адрес клиента»).
- * Отрезает протокол+домен, query (?...), hash (#...), завершающий слэш.
+ * Отрезает протокол+домен, query (?...), hash (#...), завершающий слэш, а также
+ * «мусорную» пунктуацию по краям сегмента («/akron,» → «akron»).
  *   https://site.ru/rzd/mnp?a=1   → { key:'rzd',  label:'/rzd' }
  *   https://site.ru/nlstar-int/   → { key:'nlstar-int', label:'/nlstar-int' }
  *   https://site.ru/akron#!/tab/1 → { key:'akron', label:'/akron' }
+ *   https://site.ru/akron,        → { key:'akron', label:'/akron' }
  *   https://site.ru/  (или /)     → { key:'/',     label:'Главная' }
  * /rzd и /rzdff остаются разными группами.
  */
@@ -105,12 +112,20 @@ function groupKeyOf(url: string): { key: string; label: string } {
   const m = url.match(/^https?:\/\/[^/]+(\/.*)?$/i)
   let path = m ? (m[1] ?? '/') : url
   path = path.split('?')[0].split('#')[0]
-  const seg = path.split('/').filter(Boolean)[0] ?? ''
+  let seg = path.split('/').filter(Boolean)[0] ?? ''
+  // Срезаем не-буквенно-цифровые символы по краям (запятые, точки, скобки и т.п.),
+  // сохраняя внутренние дефисы: «akron,» → «akron», «nlstar-int» остаётся как есть.
+  seg = seg.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
   if (!seg) return { key: '/', label: 'Главная' }
   return { key: seg.toLowerCase(), label: '/' + seg }
 }
 
-/** Группирует страницы по первому сегменту пути; внутри и между группами сортирует по визитам. */
+/**
+ * Группирует страницы по первому сегменту пути; внутри и между группами сортирует по визитам.
+ * Малотрафиковые группы (≤ RARE_VISITS визитов) — обычно опечатки/ошибочные адреса —
+ * сводятся в единый бакет «Прочее» в конце списка, чтобы не засорять перечень клиентов.
+ * «Главная» (key '/') в бакет не попадает.
+ */
 function groupPages(pages: PageRow[]): PageGroup[] {
   const map = new Map<string, PageGroup>()
   for (const p of pages) {
@@ -125,13 +140,38 @@ function groupPages(pages: PageRow[]): PageGroup[] {
     g.leadsMetrika += p.leadsMetrika
     g.pages.push(p)
   }
-  const groups = Array.from(map.values())
-  for (const g of groups) {
+
+  const normal: PageGroup[] = []
+  const rare:   PageGroup[] = []
+  for (const g of map.values()) {
+    if (g.key !== '/' && g.visits <= RARE_VISITS) rare.push(g)
+    else normal.push(g)
+  }
+
+  for (const g of normal) {
     g.conversionMetrika = g.visits > 0 ? (g.leadsMetrika / g.visits) * 100 : 0
     g.pages.sort((a, b) => b.visits - a.visits)
   }
-  groups.sort((a, b) => b.visits - a.visits)
-  return groups
+  normal.sort((a, b) => b.visits - a.visits)
+
+  if (rare.length > 0) {
+    const bucket: PageGroup = {
+      key: OTHER_KEY,
+      label: `Прочее (редкие адреса · ${rare.length})`,
+      visitors: 0, visits: 0, leadsMetrika: 0, conversionMetrika: 0, pages: [],
+    }
+    for (const g of rare) {
+      bucket.visitors     += g.visitors
+      bucket.visits       += g.visits
+      bucket.leadsMetrika += g.leadsMetrika
+      bucket.pages.push(...g.pages)
+    }
+    bucket.conversionMetrika = bucket.visits > 0 ? (bucket.leadsMetrika / bucket.visits) * 100 : 0
+    bucket.pages.sort((a, b) => b.visits - a.visits)
+    normal.push(bucket)  // всегда в конце списка
+  }
+
+  return normal
 }
 
 // ===================== Service =====================
