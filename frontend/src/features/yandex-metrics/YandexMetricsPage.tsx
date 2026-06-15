@@ -11,6 +11,7 @@ import {
   type YandexSite,
   type SiteForm,
   type YandexReport,
+  type PageGroup,
 } from './api/yandex'
 
 const num = (n: number) => n.toLocaleString('ru-RU')
@@ -37,15 +38,31 @@ function defaultFrom(): string {
 // Сентинел «Общее» (агрегация по всем сайтам) — ни у одного реального сайта нет id < 0.
 const AGG = -1
 
-/** Сводные KPI по всем сайтам: посетители, заявки, конверсия, подключено. */
-function aggKpi(reports: YandexReport[]) {
-  let visitors = 0, leads = 0, connected = 0
+/** Режим «Общее»: склеивает отчёты всех сайтов в один — строки клиентов всех сайтов
+ *  в одной таблице (без слияния одинаковых адресов), итоги и KPI суммируются. */
+function combineReports(reports: YandexReport[]): YandexReport {
+  const totals = { visitors: 0, visits: 0, leadsMetrika: 0, conversionMetrika: 0 }
+  const groups: PageGroup[] = []
+  let hasGoal = false, funnel = false, dealsConfigured = false, deals = 0
   for (const r of reports) {
-    visitors  += r.totals.visitors
-    leads     += r.amocrmFunnel ? amoTotals(r).newRequests : (r.site.hasGoal ? r.totals.leadsMetrika : 0)
-    connected += r.amocrmFunnel ? amoTotals(r).connected   : (r.amocrm.configured ? (r.amocrm.deals ?? 0) : 0)
+    totals.visitors     += r.totals.visitors
+    totals.visits       += r.totals.visits
+    totals.leadsMetrika += r.totals.leadsMetrika
+    hasGoal = hasGoal || r.site.hasGoal
+    funnel  = funnel  || r.amocrmFunnel
+    if (r.amocrm.configured) { dealsConfigured = true; deals += r.amocrm.deals ?? 0 }
+    for (const g of r.groups) groups.push({ ...g, siteId: r.site.id, siteName: r.site.name })
   }
-  return { visitors, leads, connected, conv: visitors > 0 ? leads / visitors * 100 : null }
+  totals.conversionMetrika = totals.visits > 0 ? totals.leadsMetrika / totals.visits * 100 : 0
+  return {
+    site: { id: AGG, name: 'Общее', counterId: 0, goalId: null, hasGoal },
+    from: reports[0]?.from ?? '',
+    to:   reports[0]?.to ?? '',
+    totals,
+    groups,
+    amocrm: { configured: dealsConfigured, deals: dealsConfigured ? deals : null },
+    amocrmFunnel: funnel,
+  }
 }
 
 export function YandexMetricsPage() {
@@ -119,6 +136,9 @@ export function YandexMetricsPage() {
     if (id === AGG) void loadAll(sites, f, t)
     else void loadReport(id, f, t)
   }
+
+  // Единый отчёт для рендера: либо один сайт, либо «Общее» (склейка всех сайтов).
+  const view = report ?? (reports ? combineReports(reports) : null)
 
   return (
     <div>
@@ -196,32 +216,32 @@ export function YandexMetricsPage() {
         </div>
       )}
 
-      {/* Данные */}
-      {!loading && report && (
+      {/* Данные (один сайт или режим «Общее» — единый отчёт view) */}
+      {!loading && view && (
         <>
           {/* KPI */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-            <Kpi label="Посетителей" value={num(report.totals.visitors)} />
-            <Kpi label={report.amocrmFunnel ? 'Заявки (amoCRM)' : 'Заявки (цель)'}
-                 value={report.amocrmFunnel
-                   ? num(amoTotals(report).newRequests)
-                   : (report.site.hasGoal ? num(report.totals.leadsMetrika) : '—')}
-                 hint={report.amocrmFunnel ? undefined : (report.site.hasGoal ? undefined : 'Цель не задана')}
+            <Kpi label="Посетителей" value={num(view.totals.visitors)} />
+            <Kpi label={view.amocrmFunnel ? 'Заявки (amoCRM)' : 'Заявки (цель)'}
+                 value={view.amocrmFunnel
+                   ? num(amoTotals(view).newRequests)
+                   : (view.site.hasGoal ? num(view.totals.leadsMetrika) : '—')}
+                 hint={view.amocrmFunnel ? undefined : (view.site.hasGoal ? undefined : 'Цель не задана')}
                  color="text-blue-600 dark:text-blue-400" />
             <Kpi label="Конверсия"
-                 value={report.amocrmFunnel
-                   ? (report.totals.visitors > 0 ? pct(amoTotals(report).newRequests / report.totals.visitors * 100) : '—')
-                   : (report.site.hasGoal ? pct(report.totals.conversionMetrika) : '—')}
+                 value={view.amocrmFunnel
+                   ? (view.totals.visitors > 0 ? pct(amoTotals(view).newRequests / view.totals.visitors * 100) : '—')
+                   : (view.site.hasGoal ? pct(view.totals.conversionMetrika) : '—')}
                  color="text-emerald-600 dark:text-emerald-400" />
-            <Kpi label={report.amocrmFunnel ? 'Подключено (amoCRM)' : 'Сделки amoCRM'}
-                 value={report.amocrmFunnel
-                   ? num(amoTotals(report).connected)
-                   : (report.amocrm.configured ? num(report.amocrm.deals ?? 0) : '—')}
-                 hint={report.amocrmFunnel ? undefined : (report.amocrm.configured ? undefined : 'Привязка не настроена')}
+            <Kpi label={view.amocrmFunnel ? 'Подключено (amoCRM)' : 'Сделки amoCRM'}
+                 value={view.amocrmFunnel
+                   ? num(amoTotals(view).connected)
+                   : (view.amocrm.configured ? num(view.amocrm.deals ?? 0) : '—')}
+                 hint={view.amocrmFunnel ? undefined : (view.amocrm.configured ? undefined : 'Привязка не настроена')}
                  color="text-violet-600 dark:text-violet-400" />
           </div>
 
-          {!report.site.hasGoal && !report.amocrmFunnel && (
+          {!view.site.hasGoal && !view.amocrmFunnel && (
             <div className="mb-4 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300 text-sm">
               Для этого сайта не указана цель Метрики — заявки и конверсия по страницам не считаются.
               Укажите ID цели в настройках сайта.
@@ -229,38 +249,15 @@ export function YandexMetricsPage() {
           )}
 
           {/* Таблица по клиентам (группам страниц) */}
-          <PagesTable report={report} />
+          <PagesTable report={view} />
 
-          {report.groups.length === 0 && (
+          {view.groups.length === 0 && (
             <div className="text-center py-16 text-sm text-zinc-500 dark:text-zinc-400">
               Нет данных за выбранный период.
             </div>
           )}
         </>
       )}
-
-      {/* Режим «Общее»: сводные KPI + таблица по каждому сайту отдельно */}
-      {!loading && reports && (() => {
-        const k = aggKpi(reports)
-        return (
-          <>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-              <Kpi label="Посетителей" value={num(k.visitors)} />
-              <Kpi label="Заявки" value={num(k.leads)} color="text-blue-600 dark:text-blue-400" />
-              <Kpi label="Конверсия" value={k.conv == null ? '—' : pct(k.conv)} color="text-emerald-600 dark:text-emerald-400" />
-              <Kpi label="Подключено" value={num(k.connected)} color="text-violet-600 dark:text-violet-400" />
-            </div>
-
-            {reports.length === 0 && (
-              <div className="text-center py-16 text-sm text-zinc-500 dark:text-zinc-400">
-                Нет данных по сайтам за выбранный период.
-              </div>
-            )}
-
-            {reports.map(r => <PagesTable key={r.site.id} report={r} siteLabel={r.site.name} />)}
-          </>
-        )
-      })()}
 
       {/* Управление сайтами */}
       {manageOpen && (
@@ -295,7 +292,7 @@ function Kpi({ label, value, hint, color }: { label: string; value: string; hint
 
 // ===================== Таблица по страницам =====================
 
-function PagesTable({ report, siteLabel }: { report: YandexReport; siteLabel?: string }) {
+function PagesTable({ report }: { report: YandexReport }) {
   const siteId = report.site.id
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [query, setQuery]       = useState('')
@@ -305,16 +302,7 @@ function PagesTable({ report, siteLabel }: { report: YandexReport; siteLabel?: s
   // Смена сайта — сбрасываем буфер (slug'и другие); данные снова придут из report.
   useEffect(() => { setEdits({}) }, [siteId])
 
-  if (report.groups.length === 0) {
-    if (!siteLabel) return null
-    // В режиме «Общее» показываем заголовок сайта даже без данных.
-    return (
-      <div className="mb-6">
-        <h2 className="text-base font-semibold mb-2">{siteLabel}</h2>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">Нет данных за выбранный период.</p>
-      </div>
-    )
-  }
+  if (report.groups.length === 0) return null
   const hasGoal = report.site.hasGoal
 
   const toggle = (key: string) => setExpanded(prev => {
@@ -326,19 +314,24 @@ function PagesTable({ report, siteLabel }: { report: YandexReport; siteLabel?: s
   type Group = YandexReport['groups'][number]
   type Field = keyof ClientMeta  // 'name' | 'createdDate' | 'launchDate'
 
+  // Уникальный id строки: в режиме «Общее» один slug встречается на разных сайтах,
+  // поэтому буфер правок / раскрытие / React-key привязываем к (сайт + slug).
+  const rowId = (g: Group) => g.siteId != null ? `${g.siteId}:${g.key}` : g.key
+
   // Текущее отображаемое значение поля: правка из буфера, иначе значение с бэка.
-  const valOf = (g: Group, f: Field) => edits[g.key]?.[f] ?? g[f] ?? ''
-  const setEdit = (key: string, f: Field, v: string) =>
-    setEdits(prev => ({ ...prev, [key]: { ...prev[key], [f]: v } }))
+  const valOf = (g: Group, f: Field) => edits[rowId(g)]?.[f] ?? g[f] ?? ''
+  const setEdit = (g: Group, f: Field, v: string) =>
+    setEdits(prev => ({ ...prev, [rowId(g)]: { ...prev[rowId(g)], [f]: v } }))
 
   // Сохраняем все три поля на сервере при потере фокуса/Enter, только если что-то изменилось.
+  // В «Общем» правка уходит на сайт строки (g.siteId), иначе — на выбранный сайт.
   const saveMeta = async (g: Group) => {
     const name        = valOf(g, 'name').trim()
     const createdDate = valOf(g, 'createdDate')
     const launchDate  = valOf(g, 'launchDate')
     if (name === (g.name ?? '') && createdDate === (g.createdDate ?? '') && launchDate === (g.launchDate ?? '')) return
     try {
-      await setClientMeta(siteId, g.key, { name, createdDate, launchDate })
+      await setClientMeta(g.siteId ?? siteId, g.key, { name, createdDate, launchDate })
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e))
     }
@@ -405,7 +398,7 @@ function PagesTable({ report, siteLabel }: { report: YandexReport; siteLabel?: s
   return (
     <div className="mb-6">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-base font-semibold">{siteLabel ? `${siteLabel} · по клиентам` : 'По клиентам'}</h2>
+        <h2 className="text-base font-semibold">По клиентам</h2>
         <div className="flex items-center gap-3">
           <div className="relative">
             <input
@@ -424,7 +417,7 @@ function PagesTable({ report, siteLabel }: { report: YandexReport; siteLabel?: s
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => setExpanded(new Set(report.groups.map(g => g.key)))}
+              onClick={() => setExpanded(new Set(report.groups.map(rowId)))}
               className="text-[12px] text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
             >Развернуть всё</button>
             <span className="text-zinc-300 dark:text-zinc-700">·</span>
@@ -497,14 +490,14 @@ function PagesTable({ report, siteLabel }: { report: YandexReport; siteLabel?: s
                 </tr>
               )}
               {sortedGroups.map(g => {
-                const isOpen = q ? true : expanded.has(g.key)
+                const isOpen = q ? true : expanded.has(rowId(g))
                 const expandable = g.pages.length > 1
                 return (
-                  <Fragment key={g.key}>
+                  <Fragment key={rowId(g)}>
                     {/* Строка группы (клиент) */}
                     <tr
                       className={`border-b border-zinc-200 dark:border-zinc-800 group ${expandable ? 'cursor-pointer' : ''} hover:bg-zinc-50 dark:hover:bg-zinc-800/40`}
-                      onClick={() => expandable && toggle(g.key)}
+                      onClick={() => expandable && toggle(rowId(g))}
                     >
                       <td className="sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/40 border-r border-zinc-200 dark:border-zinc-800 px-4 transition-colors max-w-[520px]">
                         <div className="h-[40px] flex items-center gap-2 text-[13px] font-medium text-zinc-900 dark:text-zinc-100">
@@ -515,6 +508,11 @@ function PagesTable({ report, siteLabel }: { report: YandexReport; siteLabel?: s
                             </svg>
                           </span>
                           <span className="truncate" title={g.label}>{g.label}</span>
+                          {g.siteName && (
+                            <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300" title={`Сайт: ${g.siteName}`}>
+                              {g.siteName}
+                            </span>
+                          )}
                           {g.key !== '__other__' && g.pages[0] && (
                             <a
                               href={g.pages[0].url}
@@ -542,7 +540,7 @@ function PagesTable({ report, siteLabel }: { report: YandexReport; siteLabel?: s
                         <input
                           value={valOf(g, 'name')}
                           onClick={e => e.stopPropagation()}
-                          onChange={e => setEdit(g.key, 'name', e.target.value)}
+                          onChange={e => setEdit(g, 'name', e.target.value)}
                           onBlur={() => void saveMeta(g)}
                           onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
                           placeholder="— название —"
@@ -554,7 +552,7 @@ function PagesTable({ report, siteLabel }: { report: YandexReport; siteLabel?: s
                           type="date"
                           value={valOf(g, 'createdDate')}
                           onClick={e => e.stopPropagation()}
-                          onChange={e => setEdit(g.key, 'createdDate', e.target.value)}
+                          onChange={e => setEdit(g, 'createdDate', e.target.value)}
                           onBlur={() => void saveMeta(g)}
                           className="w-full h-7 px-2 rounded-md border border-transparent bg-transparent text-[12px] text-zinc-700 hover:border-zinc-200 focus:border-zinc-300 focus:bg-white dark:text-zinc-300 dark:hover:border-zinc-700 dark:focus:border-zinc-600 dark:focus:bg-zinc-900 focus:outline-none transition-colors dark:[color-scheme:dark]"
                         />
@@ -564,7 +562,7 @@ function PagesTable({ report, siteLabel }: { report: YandexReport; siteLabel?: s
                           type="date"
                           value={valOf(g, 'launchDate')}
                           onClick={e => e.stopPropagation()}
-                          onChange={e => setEdit(g.key, 'launchDate', e.target.value)}
+                          onChange={e => setEdit(g, 'launchDate', e.target.value)}
                           onBlur={() => void saveMeta(g)}
                           className="w-full h-7 px-2 rounded-md border border-transparent bg-transparent text-[12px] text-zinc-700 hover:border-zinc-200 focus:border-zinc-300 focus:bg-white dark:text-zinc-300 dark:hover:border-zinc-700 dark:focus:border-zinc-600 dark:focus:bg-zinc-900 focus:outline-none transition-colors dark:[color-scheme:dark]"
                         />
@@ -584,7 +582,7 @@ function PagesTable({ report, siteLabel }: { report: YandexReport; siteLabel?: s
                     </tr>
                     {/* Подстраницы */}
                     {isOpen && g.pages.map(p => (
-                      <tr key={p.url} className="border-b border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-900/40 group">
+                      <tr key={`${rowId(g)}:${p.url}`} className="border-b border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-900/40 group">
                         <td className="sticky left-0 z-10 bg-zinc-50/40 dark:bg-zinc-900/40 border-r border-zinc-200 dark:border-zinc-800 px-4 max-w-[520px]">
                           <div className="h-[34px] flex items-center pl-6 text-[12px] text-zinc-500 dark:text-zinc-400 truncate" title={p.url}>
                             {p.url}

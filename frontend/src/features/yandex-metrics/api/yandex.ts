@@ -68,6 +68,8 @@ export interface PageGroup {
   conversionMetrika: number
   funnel:            AmoFunnel | null // воронка amoCRM по источнику (null — данных нет)
   pages:             PageRow[]
+  siteId?:           number           // режим «Общее»: к какому сайту относится строка
+  siteName?:         string           // режим «Общее»: имя сайта для бейджа
 }
 
 export interface YandexReport {
