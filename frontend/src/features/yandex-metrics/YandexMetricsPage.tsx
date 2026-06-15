@@ -215,6 +215,7 @@ function Kpi({ label, value, hint, color }: { label: string; value: string; hint
 
 function PagesTable({ report }: { report: YandexReport }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [query, setQuery]       = useState('')
   if (report.groups.length === 0) return null
   const hasGoal = report.site.hasGoal
 
@@ -224,20 +225,46 @@ function PagesTable({ report }: { report: YandexReport }) {
     return next
   })
 
+  // Поиск по адресу/slug: матчим по названию группы и по URL вложенных страниц.
+  const q = query.trim().toLowerCase()
+  const groups = q
+    ? report.groups.filter(g =>
+        g.label.toLowerCase().includes(q) ||
+        g.key.toLowerCase().includes(q) ||
+        g.pages.some(p => p.url.toLowerCase().includes(q)))
+    : report.groups
+
   return (
     <div className="mb-6">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-base font-semibold">По клиентам</h2>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setExpanded(new Set(report.groups.map(g => g.key)))}
-            className="text-[12px] text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-          >Развернуть всё</button>
-          <span className="text-zinc-300 dark:text-zinc-700">·</span>
-          <button
-            onClick={() => setExpanded(new Set())}
-            className="text-[12px] text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-          >Свернуть всё</button>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Поиск по адресу…"
+              className="h-8 w-56 pl-3 pr-7 rounded-lg border border-zinc-200 bg-white text-[12px] text-zinc-800 placeholder:text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-300 dark:focus:ring-zinc-700"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-[13px] leading-none"
+                title="Очистить"
+              >&#x2715;</button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setExpanded(new Set(report.groups.map(g => g.key)))}
+              className="text-[12px] text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+            >Развернуть всё</button>
+            <span className="text-zinc-300 dark:text-zinc-700">·</span>
+            <button
+              onClick={() => setExpanded(new Set())}
+              className="text-[12px] text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+            >Свернуть всё</button>
+          </div>
         </div>
       </div>
       <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm">
@@ -260,8 +287,15 @@ function PagesTable({ report }: { report: YandexReport }) {
               </tr>
             </thead>
             <tbody>
-              {report.groups.map(g => {
-                const isOpen = expanded.has(g.key)
+              {groups.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-6 text-center text-[12px] text-zinc-500 dark:text-zinc-400">
+                    Ничего не найдено по «{query.trim()}»
+                  </td>
+                </tr>
+              )}
+              {groups.map(g => {
+                const isOpen = q ? true : expanded.has(g.key)
                 const expandable = g.pages.length > 1
                 return (
                   <Fragment key={g.key}>
