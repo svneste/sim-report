@@ -30,7 +30,15 @@ export function App() {
 
   const assocActive = tab === 'associations-day' || tab === 'associations-year'
   const finActive = tab === 'finances-megafon' || tab === 'finances-megafon-dynamics' || tab === 'finances-crm'
-  const isNesterovich = currentUser?.LAST_NAME === 'Нестерович' && currentUser?.NAME === 'Сергей'
+
+  // Доступ к разделам по ФИО из Bitrix24 (нормализуем регистр/пробелы).
+  // Бэкенд /api/yandex/* пока не проверяет пользователя — это гейтинг на уровне UI.
+  const norm = (s?: string | null) => (s ?? '').trim().toLowerCase()
+  const fullName = `${norm(currentUser?.LAST_NAME)} ${norm(currentUser?.NAME)}`.trim()
+  const isNesterovich = fullName === 'нестерович сергей'
+  // «Аналитика сайтов»: Нестерович Сергей, Хитро Вероника, Кузьмин Владимир.
+  const ANALYTICS_ALLOWED = new Set(['нестерович сергей', 'хитро вероника', 'кузьмин владимир'])
+  const canViewAnalytics = ANALYTICS_ALLOWED.has(fullName)
 
   return (
     <Bx24Guard>
@@ -118,8 +126,8 @@ export function App() {
                 )}
               </div>
 
-              {/* Аналитика сайтов (Яндекс Метрика) — только для Нестерович Сергея */}
-              {isNesterovich && (
+              {/* Аналитика сайтов (Яндекс Метрика) — Нестерович, Хитро, Кузьмин */}
+              {canViewAnalytics && (
                 <button
                   type="button"
                   onClick={() => setTab('yandex-metrics')}
@@ -210,7 +218,7 @@ export function App() {
         {tab === 'finances-megafon'           && <FinancesMegafonPage />}
         {tab === 'finances-megafon-dynamics' && <MegafonDynamicsPage />}
         {tab === 'finances-crm'              && <FinancesCrmPage />}
-        {tab === 'yandex-metrics'            && <YandexMetricsPage />}
+        {tab === 'yandex-metrics'            && canViewAnalytics && <YandexMetricsPage />}
       </main>
     </div>
     </Bx24Guard>
