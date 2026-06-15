@@ -265,8 +265,8 @@ function PagesTable({ report }: { report: YandexReport }) {
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Поиск по адресу…"
-              className="h-8 w-56 pl-3 pr-7 rounded-lg border border-zinc-200 bg-white text-[12px] text-zinc-800 placeholder:text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-300 dark:focus:ring-zinc-700"
+              placeholder="Поиск по адресу или названию…"
+              className="h-8 w-64 pl-3 pr-7 rounded-lg border border-zinc-200 bg-white text-[12px] text-zinc-800 placeholder:text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-300 dark:focus:ring-zinc-700"
             />
             {query && (
               <button
