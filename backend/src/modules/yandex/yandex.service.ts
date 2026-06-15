@@ -160,7 +160,7 @@ function groupKeyOf(url: string): { key: string; label: string } {
  * Группирует страницы по первому сегменту пути; внутри и между группами сортирует по визитам.
  * Малотрафиковые группы (≤ RARE_VISITS визитов) — обычно опечатки/ошибочные адреса —
  * сводятся в единый бакет «Прочее» в конце списка, чтобы не засорять перечень клиентов.
- * «Главная» (key '/') в бакет не попадает.
+ * «Главная» (key '/') не является клиентской страницей и всегда уходит в «Прочее».
  */
 function groupPages(pages: PageRow[]): PageGroup[] {
   const map = new Map<string, PageGroup>()
@@ -180,7 +180,8 @@ function groupPages(pages: PageRow[]): PageGroup[] {
   const normal: PageGroup[] = []
   const rare:   PageGroup[] = []
   for (const g of map.values()) {
-    if (g.key !== '/' && g.visits <= RARE_VISITS) rare.push(g)
+    // «Главная» (key '/') — не клиентская страница, всегда в «Прочее»; плюс малотрафиковые.
+    if (g.key === '/' || g.visits <= RARE_VISITS) rare.push(g)
     else normal.push(g)
   }
 
