@@ -8,6 +8,7 @@ import { eq, and, asc, sql, inArray } from 'drizzle-orm'
 // Pipeline синкается из config.AMOCRM_PIPELINE_ID (= 4298623). ID этапов ниже
 // специфичны для этой воронки (сверено по API /leads/pipelines/.../statuses).
 const AMO_UTM_FIELD_ID        = 485305     // кастом-поле utm_referrer (URL источника заявки)
+const AMO_MNP_FIELD_ID        = 539425     // кастом-поле «MNP?» (true = перенос номера/порт)
 const AMO_STAGE_UNSORTED      = 40162663   // «Неразобранное»
 const AMO_STAGE_NEW           = 40162666   // «Новое обращение» (входной этап)
 const AMO_STAGE_CONTRACT_SENT = 56807310   // «Договор отправлен»
@@ -92,8 +93,9 @@ export interface PageRow {
 export interface AmoFunnel {
   newRequests:  number   // всего заявок с источника (вошли в воронку — «Новое обращение»)
   advanced:     number   // перешли дальше «Нового обращения» (хоть на один следующий этап)
-  contractSent: number   // дошли до «Договор отправлен» (по истории переходов)
-  won:          number   // текущий статус «Успешно реализовано»
+  connected:    number   // подключено: дошли до «Договор отправлен» ИЛИ текущий «Успешно»
+  connectedNew: number   // из них новые номера (MNP? = false)
+  connectedMnp: number   // из них переносы номера (MNP? = true)
   lost:         number   // текущий статус «Не реализовано»
 }
 
@@ -381,9 +383,18 @@ export const yandexService = {
     const result = new Map<string, AmoFunnel>()
     if (!site.domain) return result
 
-    // 1. Сделки воронки за период + значение utm_referrer.
+    // 1. Сделки воронки за период + значение utm_referrer + флаг MNP.
     const dealsRes = await db.execute(sql`
-      SELECT d.id::text AS id, d.status_id::text AS status_id, ref.url AS url
+      SELECT d.id::text AS id, d.status_id::text AS status_id, ref.url AS url,
+        EXISTS (
+          SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(d.raw->'custom_fields_values') = 'array'
+                                                  THEN d.raw->'custom_fields_values' ELSE '[]'::jsonb END) cf
+          WHERE (cf->>'field_id')::bigint = ${AMO_MNP_FIELD_ID}
+            AND EXISTS (
+              SELECT 1 FROM jsonb_array_elements(cf->'values') vv
+              WHERE COALESCE(vv->>'value', '') NOT IN ('false', '0', '')
+            )
+        ) AS mnp
       FROM amocrm_deals d
       LEFT JOIN LATERAL (
         SELECT v->>'value' AS url
@@ -398,11 +409,11 @@ export const yandexService = {
         AND d.created_at >= ${from}::date
         AND d.created_at < (${to}::date + interval '1 day')
     `)
-    const dealRows = rowsOf<{ id: string; status_id: string; url: string | null }>(dealsRes)
+    const dealRows = rowsOf<{ id: string; status_id: string; url: string | null; mnp: boolean }>(dealsRes)
 
     // Фильтр по домену сайта + извлечение slug (как у групп Метрики).
     const host = site.domain.toLowerCase()
-    interface DealInfo { slug: string; status: number; touched: Set<number> }
+    interface DealInfo { slug: string; status: number; mnp: boolean; touched: Set<number> }
     const deals = new Map<string, DealInfo>()
     for (const r of dealRows) {
       if (!r.url) continue
@@ -411,7 +422,7 @@ export const yandexService = {
       const h = m[1].replace(/^www\./, '')
       if (h !== host && !h.endsWith('.' + host)) continue
       const status = Number(r.status_id)
-      deals.set(r.id, { slug: groupKeyOf(String(r.url)).key, status, touched: new Set([status]) })
+      deals.set(r.id, { slug: groupKeyOf(String(r.url)).key, status, mnp: !!r.mnp, touched: new Set([status]) })
     }
     if (deals.size === 0) return result
 
@@ -428,7 +439,7 @@ export const yandexService = {
     // 3. Агрегируем по slug.
     const ensure = (slug: string): AmoFunnel => {
       let f = result.get(slug)
-      if (!f) { f = { newRequests: 0, advanced: 0, contractSent: 0, won: 0, lost: 0 }; result.set(slug, f) }
+      if (!f) { f = { newRequests: 0, advanced: 0, connected: 0, connectedNew: 0, connectedMnp: 0, lost: 0 }; result.set(slug, f) }
       return f
     }
     for (const d of deals.values()) {
@@ -439,8 +450,12 @@ export const yandexService = {
         s => s !== AMO_STAGE_UNSORTED && s !== AMO_STAGE_NEW && s !== AMO_STATUS_LOST,
       )
       if (advanced) f.advanced++
-      if (d.touched.has(AMO_STAGE_CONTRACT_SENT)) f.contractSent++
-      if (d.status === AMO_STATUS_WON)  f.won++
+      // «подключено» — дошли до «Договор отправлен» ИЛИ уже в статусе «Успешно».
+      if (d.touched.has(AMO_STAGE_CONTRACT_SENT) || d.status === AMO_STATUS_WON) {
+        f.connected++
+        if (d.mnp) f.connectedMnp++
+        else      f.connectedNew++
+      }
       if (d.status === AMO_STATUS_LOST) f.lost++
     }
     return result

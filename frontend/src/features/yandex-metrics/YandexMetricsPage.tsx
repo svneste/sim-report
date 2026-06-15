@@ -19,8 +19,8 @@ const pct = (n: number) => `${n.toLocaleString('ru-RU', { maximumFractionDigits:
 /** Итоги воронки amoCRM по всем группам отчёта (для KPI). */
 function amoTotals(r: YandexReport) {
   return r.groups.reduce(
-    (a, g) => ({ newRequests: a.newRequests + (g.funnel?.newRequests ?? 0), won: a.won + (g.funnel?.won ?? 0) }),
-    { newRequests: 0, won: 0 },
+    (a, g) => ({ newRequests: a.newRequests + (g.funnel?.newRequests ?? 0), connected: a.connected + (g.funnel?.connected ?? 0) }),
+    { newRequests: 0, connected: 0 },
   )
 }
 
@@ -176,9 +176,9 @@ export function YandexMetricsPage() {
                    ? (report.totals.visitors > 0 ? pct(amoTotals(report).newRequests / report.totals.visitors * 100) : '—')
                    : (report.site.hasGoal ? pct(report.totals.conversionMetrika) : '—')}
                  color="text-emerald-600 dark:text-emerald-400" />
-            <Kpi label={report.amocrmFunnel ? 'Успешно (amoCRM)' : 'Сделки amoCRM'}
+            <Kpi label={report.amocrmFunnel ? 'Подключено (amoCRM)' : 'Сделки amoCRM'}
                  value={report.amocrmFunnel
-                   ? num(amoTotals(report).won)
+                   ? num(amoTotals(report).connected)
                    : (report.amocrm.configured ? num(report.amocrm.deals ?? 0) : '—')}
                  hint={report.amocrmFunnel ? undefined : (report.amocrm.configured ? undefined : 'Привязка не настроена')}
                  color="text-violet-600 dark:text-violet-400" />
@@ -286,15 +286,16 @@ function PagesTable({ report }: { report: YandexReport }) {
 
   // Воронка amoCRM: флаг доступности, число колонок и итоги по всем группам.
   const af = report.amocrmFunnel
-  const colCount = 7 + (af ? 4 : 0)
+  const colCount = 7 + (af ? 5 : 0)
   const funnelTotals: AmoFunnel | null = af
     ? report.groups.reduce<AmoFunnel>((a, g) => ({
         newRequests:  a.newRequests  + (g.funnel?.newRequests  ?? 0),
         advanced:     a.advanced     + (g.funnel?.advanced     ?? 0),
-        contractSent: a.contractSent + (g.funnel?.contractSent ?? 0),
-        won:          a.won          + (g.funnel?.won          ?? 0),
+        connected:    a.connected    + (g.funnel?.connected    ?? 0),
+        connectedNew: a.connectedNew + (g.funnel?.connectedNew ?? 0),
+        connectedMnp: a.connectedMnp + (g.funnel?.connectedMnp ?? 0),
         lost:         a.lost         + (g.funnel?.lost         ?? 0),
-      }), { newRequests: 0, advanced: 0, contractSent: 0, won: 0, lost: 0 })
+      }), { newRequests: 0, advanced: 0, connected: 0, connectedNew: 0, connectedMnp: 0, lost: 0 })
     : null
 
   return (
@@ -361,11 +362,14 @@ function PagesTable({ report }: { report: YandexReport }) {
                     <th className="border-b border-l-2 border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: перешли дальше «Нового обращения» (хоть на один следующий этап)">
                       Перешло
                     </th>
-                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: дошли до этапа «Договор отправлен»">
-                      Договор
+                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: подключено — дошли до «Договор отправлен» или уже «Успешно»">
+                      Подключено
                     </th>
-                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: текущий статус «Успешно реализовано»">
-                      Успешно
+                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: из подключённых — новые номера (MNP? = нет)">
+                      Подкл. новые
+                    </th>
+                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: из подключённых — переносы номера (MNP? = да)">
+                      Подкл. MNP
                     </th>
                     <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: текущий статус «Не реализовано»">
                       Отказ
@@ -538,15 +542,16 @@ function FCell({ value, h, first, className }: { value: string; h: number; first
   )
 }
 
-/** Четыре ячейки воронки amoCRM: Перешло · Договор · Успешно · Отказ («Заявки» = newRequests в отдельной колонке). */
+/** Пять ячеек воронки amoCRM: Перешло · Подключено · Подкл. новые · Подкл. MNP · Отказ. */
 function FunnelCells({ f, h, blank, bold }: { f: AmoFunnel | null; h: number; blank?: boolean; bold?: boolean }) {
-  if (blank) return <>{[0, 1, 2, 3].map(i => <FCell key={i} first={i === 0} value="" h={h} />)}</>
+  if (blank) return <>{[0, 1, 2, 3, 4].map(i => <FCell key={i} first={i === 0} value="" h={h} />)}</>
   const b = bold ? ' font-bold' : ''
   return (
     <>
       <FCell first value={f ? num(f.advanced) : '—'}     h={h} className={'text-zinc-600 dark:text-zinc-400' + b} />
-      <FCell       value={f ? num(f.contractSent) : '—'} h={h} className={'text-violet-600 dark:text-violet-400' + b} />
-      <FCell       value={f ? num(f.won) : '—'}          h={h} className={'text-emerald-600 dark:text-emerald-400 font-semibold' + b} />
+      <FCell       value={f ? num(f.connected) : '—'}    h={h} className={'text-emerald-600 dark:text-emerald-400 font-semibold' + b} />
+      <FCell       value={f ? num(f.connectedNew) : '—'} h={h} className={'text-emerald-700/80 dark:text-emerald-300/80' + b} />
+      <FCell       value={f ? num(f.connectedMnp) : '—'} h={h} className={'text-cyan-600 dark:text-cyan-400' + b} />
       <FCell       value={f ? num(f.lost) : '—'}         h={h} className={'text-rose-500 dark:text-rose-400' + b} />
     </>
   )

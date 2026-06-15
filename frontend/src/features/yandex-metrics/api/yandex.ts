@@ -50,8 +50,9 @@ export interface PageRow {
 export interface AmoFunnel {
   newRequests:  number   // всего заявок с источника (Новое обращение)
   advanced:     number   // перешли дальше Нового обращения
-  contractSent: number   // дошли до «Договор отправлен»
-  won:          number   // успешно реализовано
+  connected:    number   // подключено: «Договор отправлен» или «Успешно»
+  connectedNew: number   // из них новые номера
+  connectedMnp: number   // из них MNP (порт)
   lost:         number   // не реализовано
 }
 
