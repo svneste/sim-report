@@ -16,6 +16,14 @@ import {
 const num = (n: number) => n.toLocaleString('ru-RU')
 const pct = (n: number) => `${n.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} %`
 
+/** Итоги воронки amoCRM по всем группам отчёта (для KPI). */
+function amoTotals(r: YandexReport) {
+  return r.groups.reduce(
+    (a, g) => ({ newRequests: a.newRequests + (g.funnel?.newRequests ?? 0), won: a.won + (g.funnel?.won ?? 0) }),
+    { newRequests: 0, won: 0 },
+  )
+}
+
 /** Дата YYYY-MM-DD (локальная), для дефолтного диапазона и input[type=date]. */
 function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -157,12 +165,23 @@ export function YandexMetricsPage() {
           {/* KPI */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
             <Kpi label="Посетителей" value={num(report.totals.visitors)} />
-            <Kpi label="Заявки (цель)" value={report.site.hasGoal ? num(report.totals.leadsMetrika) : '—'}
-                 hint={report.site.hasGoal ? undefined : 'Цель не задана'} color="text-blue-600 dark:text-blue-400" />
-            <Kpi label="Конверсия" value={report.site.hasGoal ? pct(report.totals.conversionMetrika) : '—'}
+            <Kpi label={report.amocrmFunnel ? 'Заявки (amoCRM)' : 'Заявки (цель)'}
+                 value={report.amocrmFunnel
+                   ? num(amoTotals(report).newRequests)
+                   : (report.site.hasGoal ? num(report.totals.leadsMetrika) : '—')}
+                 hint={report.amocrmFunnel ? undefined : (report.site.hasGoal ? undefined : 'Цель не задана')}
+                 color="text-blue-600 dark:text-blue-400" />
+            <Kpi label="Конверсия"
+                 value={report.amocrmFunnel
+                   ? (report.totals.visitors > 0 ? pct(amoTotals(report).newRequests / report.totals.visitors * 100) : '—')
+                   : (report.site.hasGoal ? pct(report.totals.conversionMetrika) : '—')}
                  color="text-emerald-600 dark:text-emerald-400" />
-            <Kpi label="Сделки amoCRM" value={report.amocrm.configured ? num(report.amocrm.deals ?? 0) : '—'}
-                 hint={report.amocrm.configured ? undefined : 'Привязка не настроена'} color="text-violet-600 dark:text-violet-400" />
+            <Kpi label={report.amocrmFunnel ? 'Успешно (amoCRM)' : 'Сделки amoCRM'}
+                 value={report.amocrmFunnel
+                   ? num(amoTotals(report).won)
+                   : (report.amocrm.configured ? num(report.amocrm.deals ?? 0) : '—')}
+                 hint={report.amocrmFunnel ? undefined : (report.amocrm.configured ? undefined : 'Привязка не настроена')}
+                 color="text-violet-600 dark:text-violet-400" />
           </div>
 
           {!report.site.hasGoal && (
@@ -267,7 +286,7 @@ function PagesTable({ report }: { report: YandexReport }) {
 
   // Воронка amoCRM: флаг доступности, число колонок и итоги по всем группам.
   const af = report.amocrmFunnel
-  const colCount = 7 + (af ? 5 : 0)
+  const colCount = 7 + (af ? 4 : 0)
   const funnelTotals: AmoFunnel | null = af
     ? report.groups.reduce<AmoFunnel>((a, g) => ({
         newRequests:  a.newRequests  + (g.funnel?.newRequests  ?? 0),
@@ -339,10 +358,7 @@ function PagesTable({ report }: { report: YandexReport }) {
                 </th>
                 {report.amocrmFunnel && (
                   <>
-                    <th className="border-b border-l-2 border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: всего заявок с источника (этап «Новое обращение»)">
-                      Обращения
-                    </th>
-                    <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: перешли дальше «Нового обращения» (хоть на один следующий этап)">
+                    <th className="border-b border-l-2 border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: перешли дальше «Нового обращения» (хоть на один следующий этап)">
                       Перешло
                     </th>
                     <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" title="amoCRM: дошли до этапа «Договор отправлен»">
@@ -440,8 +456,16 @@ function PagesTable({ report }: { report: YandexReport }) {
                         />
                       </td>
                       <Cell value={num(g.visitors)} className="text-zinc-800 dark:text-zinc-200 font-semibold" h={40} />
-                      <Cell value={hasGoal ? num(g.leadsMetrika) : '—'} className="text-blue-600 dark:text-blue-400 font-semibold" h={40} />
-                      <Cell value={hasGoal ? pct(g.conversionMetrika) : '—'} className="text-emerald-700 dark:text-emerald-300 font-semibold" h={40} />
+                      <Cell
+                        value={af
+                          ? num(g.funnel?.newRequests ?? 0)
+                          : (hasGoal ? num(g.leadsMetrika) : '—')}
+                        className="text-blue-600 dark:text-blue-400 font-semibold" h={40} />
+                      <Cell
+                        value={af
+                          ? (g.visitors > 0 ? pct((g.funnel?.newRequests ?? 0) / g.visitors * 100) : '—')
+                          : (hasGoal ? pct(g.conversionMetrika) : '—')}
+                        className="text-emerald-700 dark:text-emerald-300 font-semibold" h={40} />
                       {af && <FunnelCells f={g.funnel} h={40} />}
                     </tr>
                     {/* Подстраницы */}
@@ -456,8 +480,8 @@ function PagesTable({ report }: { report: YandexReport }) {
                         <td className="border-l border-zinc-200 dark:border-zinc-800" />
                         <td className="border-l border-zinc-200 dark:border-zinc-800" />
                         <Cell value={num(p.visitors)} className="text-zinc-500 dark:text-zinc-400" h={34} />
-                        <Cell value={hasGoal ? num(p.leadsMetrika) : '—'} className="text-blue-500/80 dark:text-blue-400/80" h={34} />
-                        <Cell value={hasGoal ? pct(p.conversionMetrika) : '—'} className="text-emerald-600/80 dark:text-emerald-300/80" h={34} />
+                        <Cell value={af ? '' : (hasGoal ? num(p.leadsMetrika) : '—')} className="text-blue-500/80 dark:text-blue-400/80" h={34} />
+                        <Cell value={af ? '' : (hasGoal ? pct(p.conversionMetrika) : '—')} className="text-emerald-600/80 dark:text-emerald-300/80" h={34} />
                         {af && <FunnelCells f={null} h={34} blank />}
                       </tr>
                     ))}
@@ -473,8 +497,16 @@ function PagesTable({ report }: { report: YandexReport }) {
                 <td className="border-l border-zinc-200 dark:border-zinc-800" />
                 <td className="border-l border-zinc-200 dark:border-zinc-800" />
                 <Cell value={num(report.totals.visitors)} className="text-zinc-900 dark:text-zinc-100 font-bold" h={40} />
-                <Cell value={hasGoal ? num(report.totals.leadsMetrika) : '—'} className="text-blue-600 dark:text-blue-400 font-bold" h={40} />
-                <Cell value={hasGoal ? pct(report.totals.conversionMetrika) : '—'} className="text-emerald-600 dark:text-emerald-400 font-bold" h={40} />
+                <Cell
+                  value={af
+                    ? num(funnelTotals?.newRequests ?? 0)
+                    : (hasGoal ? num(report.totals.leadsMetrika) : '—')}
+                  className="text-blue-600 dark:text-blue-400 font-bold" h={40} />
+                <Cell
+                  value={af
+                    ? (report.totals.visitors > 0 ? pct((funnelTotals?.newRequests ?? 0) / report.totals.visitors * 100) : '—')
+                    : (hasGoal ? pct(report.totals.conversionMetrika) : '—')}
+                  className="text-emerald-600 dark:text-emerald-400 font-bold" h={40} />
                 {af && <FunnelCells f={funnelTotals} h={40} bold />}
               </tr>
             </tbody>
@@ -506,14 +538,13 @@ function FCell({ value, h, first, className }: { value: string; h: number; first
   )
 }
 
-/** Пять ячеек воронки amoCRM: Обращения · Перешло · Договор · Успешно · Отказ. */
+/** Четыре ячейки воронки amoCRM: Перешло · Договор · Успешно · Отказ («Заявки» = newRequests в отдельной колонке). */
 function FunnelCells({ f, h, blank, bold }: { f: AmoFunnel | null; h: number; blank?: boolean; bold?: boolean }) {
-  if (blank) return <>{[0, 1, 2, 3, 4].map(i => <FCell key={i} first={i === 0} value="" h={h} />)}</>
+  if (blank) return <>{[0, 1, 2, 3].map(i => <FCell key={i} first={i === 0} value="" h={h} />)}</>
   const b = bold ? ' font-bold' : ''
   return (
     <>
-      <FCell first value={f ? num(f.newRequests) : '—'} h={h} className={'text-zinc-800 dark:text-zinc-200 font-semibold' + b} />
-      <FCell       value={f ? num(f.advanced) : '—'}     h={h} className={'text-zinc-600 dark:text-zinc-400' + b} />
+      <FCell first value={f ? num(f.advanced) : '—'}     h={h} className={'text-zinc-600 dark:text-zinc-400' + b} />
       <FCell       value={f ? num(f.contractSent) : '—'} h={h} className={'text-violet-600 dark:text-violet-400' + b} />
       <FCell       value={f ? num(f.won) : '—'}          h={h} className={'text-emerald-600 dark:text-emerald-400 font-semibold' + b} />
       <FCell       value={f ? num(f.lost) : '—'}         h={h} className={'text-rose-500 dark:text-rose-400' + b} />
