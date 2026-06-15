@@ -186,11 +186,13 @@ export const yandexSites = pgTable('yandex_sites', {
  * Уникальность по (site_id, slug); удаление сайта чистит названия каскадом.
  */
 export const yandexClientNames = pgTable('yandex_client_names', {
-  id:        bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
-  siteId:    bigint('site_id', { mode: 'number' }).notNull().references(() => yandexSites.id, { onDelete: 'cascade' }),
-  slug:      text('slug').notNull(),                                       // 'rzd', 'akron', '__other__', '/'
-  name:      text('name').notNull(),                                       // «РЖД»
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  id:          bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  siteId:      bigint('site_id', { mode: 'number' }).notNull().references(() => yandexSites.id, { onDelete: 'cascade' }),
+  slug:        text('slug').notNull(),                                       // 'rzd', 'akron', '__other__', '/'
+  name:        text('name'),                                                 // «РЖД» (nullable — может быть заполнена только дата)
+  createdDate: date('created_date'),                                         // дата создания (ручная, YYYY-MM-DD)
+  launchDate:  date('launch_date'),                                          // дата запуска (ручная, YYYY-MM-DD)
+  updatedAt:   timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, t => ({
   siteSlugUniq: uniqueIndex('yandex_client_names_site_slug_uniq').on(t.siteId, t.slug),
 }))

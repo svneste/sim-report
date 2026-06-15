@@ -51,6 +51,8 @@ export interface PageGroup {
   key:               string
   label:             string
   name:              string | null   // ручное название клиента (если задано)
+  createdDate:       string | null   // дата создания (ручная, YYYY-MM-DD)
+  launchDate:        string | null   // дата запуска (ручная, YYYY-MM-DD)
   visits:            number
   visitors:          number
   leadsMetrika:      number
@@ -107,12 +109,18 @@ export async function fetchYandexReport(siteId: number, from?: string, to?: stri
   return parse<YandexReport>(res)
 }
 
-/** Задать/очистить ручное название клиента (по slug) для сайта. Пустое name — сброс. */
-export async function setClientName(siteId: number, slug: string, name: string): Promise<{ siteId: number; slug: string; name: string | null }> {
-  const res = await fetch(`${BASE}/api/yandex/sites/${siteId}/client-name`, {
+export interface ClientMeta {
+  name?:        string
+  createdDate?: string
+  launchDate?:  string
+}
+
+/** Задать/очистить ручные данные клиента (название + даты) по slug. Пустые поля — сброс. */
+export async function setClientMeta(siteId: number, slug: string, meta: ClientMeta): Promise<{ siteId: number; slug: string; name: string | null; createdDate: string | null; launchDate: string | null }> {
+  const res = await fetch(`${BASE}/api/yandex/sites/${siteId}/client-meta`, {
     method: 'PUT',
     headers: authHeaders(true),
-    body: JSON.stringify({ slug, name }),
+    body: JSON.stringify({ slug, ...meta }),
   })
-  return parse<{ siteId: number; slug: string; name: string | null }>(res)
+  return parse<{ siteId: number; slug: string; name: string | null; createdDate: string | null; launchDate: string | null }>(res)
 }

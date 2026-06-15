@@ -13,10 +13,13 @@ const siteSchema = z.object({
   amocrmPageFieldId: z.coerce.number().int().positive().nullish(),
 })
 
-// Тело для ручного названия клиента. name может быть пустым (сброс).
-const clientNameSchema = z.object({
-  slug: z.string().min(1, 'Пустой slug'),
-  name: z.string().max(120, 'Слишком длинное название'),
+// Тело для ручных данных клиента (название + даты). Любое поле может быть пустым (сброс).
+const dateOrEmpty = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Дата в формате YYYY-MM-DD').or(z.literal(''))
+const clientMetaSchema = z.object({
+  slug:        z.string().min(1, 'Пустой slug'),
+  name:        z.string().max(120, 'Слишком длинное название').optional(),
+  createdDate: dateOrEmpty.optional(),
+  launchDate:  dateOrEmpty.optional(),
 })
 
 function toInput(body: z.infer<typeof siteSchema>): SiteInput {
@@ -71,19 +74,20 @@ export const yandexRoutes: FastifyPluginAsync = async (app) => {
   })
 
   /**
-   * PUT /api/yandex/sites/:id/client-name — задать/очистить ручное название клиента.
-   * Тело: { slug: string, name: string }. Пустое name сбрасывает название.
+   * PUT /api/yandex/sites/:id/client-meta — задать/очистить ручные данные клиента.
+   * Тело: { slug, name?, createdDate?, launchDate? }. Пустые поля сбрасывают значения.
    */
-  app.put('/api/yandex/sites/:id/client-name', async (req, reply) => {
+  app.put('/api/yandex/sites/:id/client-meta', async (req, reply) => {
     const id = Number((req.params as { id: string }).id)
     if (!Number.isFinite(id)) { reply.code(400); return { error: 'invalid id' } }
-    const parsed = clientNameSchema.safeParse(req.body)
+    const parsed = clientMetaSchema.safeParse(req.body)
     if (!parsed.success) {
       reply.code(400)
       return { error: parsed.error.issues[0]?.message ?? 'Некорректные данные' }
     }
     try {
-      return await yandexService.setClientName(id, parsed.data.slug, parsed.data.name)
+      const { slug, name, createdDate, launchDate } = parsed.data
+      return await yandexService.setClientMeta(id, slug, { name, createdDate, launchDate })
     } catch (e) {
       reply.code(404)
       return { error: e instanceof Error ? e.message : String(e) }

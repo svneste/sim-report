@@ -5,7 +5,8 @@ import {
   updateSite,
   deleteSite,
   fetchYandexReport,
-  setClientName,
+  setClientMeta,
+  type ClientMeta,
   type YandexSite,
   type SiteForm,
   type YandexReport,
@@ -218,10 +219,10 @@ function PagesTable({ report }: { report: YandexReport }) {
   const siteId = report.site.id
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [query, setQuery]       = useState('')
-  // Локальный буфер ручных названий (по slug): и поле ввода, и оптимистичное значение.
-  const [names, setNames]       = useState<Record<string, string>>({})
-  // Смена сайта — сбрасываем буфер (slug'и другие); названия снова придут из report.
-  useEffect(() => { setNames({}) }, [siteId])
+  // Локальный буфер ручных правок (по slug): и поля ввода, и оптимистичные значения.
+  const [edits, setEdits]       = useState<Record<string, ClientMeta>>({})
+  // Смена сайта — сбрасываем буфер (slug'и другие); данные снова придут из report.
+  useEffect(() => { setEdits({}) }, [siteId])
 
   if (report.groups.length === 0) return null
   const hasGoal = report.site.hasGoal
@@ -232,27 +233,34 @@ function PagesTable({ report }: { report: YandexReport }) {
     return next
   })
 
-  // Текущее отображаемое название группы: правка из буфера, иначе значение с бэка.
-  const nameOf = (g: YandexReport['groups'][number]) => names[g.key] ?? g.name ?? ''
+  type Group = YandexReport['groups'][number]
+  type Field = keyof ClientMeta  // 'name' | 'createdDate' | 'launchDate'
 
-  // Сохраняем название на сервере при потере фокуса/Enter, только если оно изменилось.
-  const saveName = async (g: YandexReport['groups'][number]) => {
-    const value = (names[g.key] ?? g.name ?? '').trim()
-    if (value === (g.name ?? '')) return
+  // Текущее отображаемое значение поля: правка из буфера, иначе значение с бэка.
+  const valOf = (g: Group, f: Field) => edits[g.key]?.[f] ?? g[f] ?? ''
+  const setEdit = (key: string, f: Field, v: string) =>
+    setEdits(prev => ({ ...prev, [key]: { ...prev[key], [f]: v } }))
+
+  // Сохраняем все три поля на сервере при потере фокуса/Enter, только если что-то изменилось.
+  const saveMeta = async (g: Group) => {
+    const name        = valOf(g, 'name').trim()
+    const createdDate = valOf(g, 'createdDate')
+    const launchDate  = valOf(g, 'launchDate')
+    if (name === (g.name ?? '') && createdDate === (g.createdDate ?? '') && launchDate === (g.launchDate ?? '')) return
     try {
-      await setClientName(siteId, g.key, value)
+      await setClientMeta(siteId, g.key, { name, createdDate, launchDate })
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e))
     }
   }
 
-  // Поиск: по названию группы (slug), ручному имени и URL вложенных страниц.
+  // Поиск: по адресу/slug, ручному названию и URL вложенных страниц.
   const q = query.trim().toLowerCase()
   const groups = q
     ? report.groups.filter(g =>
         g.label.toLowerCase().includes(q) ||
         g.key.toLowerCase().includes(q) ||
-        nameOf(g).toLowerCase().includes(q) ||
+        valOf(g, 'name').toLowerCase().includes(q) ||
         g.pages.some(p => p.url.toLowerCase().includes(q)))
     : report.groups
 
@@ -300,6 +308,12 @@ function PagesTable({ report }: { report: YandexReport }) {
                 <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-56">
                   Название
                 </th>
+                <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-40">
+                  Дата создания
+                </th>
+                <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-40">
+                  Дата запуска
+                </th>
                 <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-28">
                   Посетители
                 </th>
@@ -314,7 +328,7 @@ function PagesTable({ report }: { report: YandexReport }) {
             <tbody>
               {groups.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-[12px] text-zinc-500 dark:text-zinc-400">
+                  <td colSpan={7} className="px-4 py-6 text-center text-[12px] text-zinc-500 dark:text-zinc-400">
                     Ничего не найдено по «{query.trim()}»
                   </td>
                 </tr>
@@ -363,13 +377,33 @@ function PagesTable({ report }: { report: YandexReport }) {
                       </td>
                       <td className="border-l border-zinc-200 dark:border-zinc-800 px-2">
                         <input
-                          value={nameOf(g)}
+                          value={valOf(g, 'name')}
                           onClick={e => e.stopPropagation()}
-                          onChange={e => { const v = e.target.value; setNames(p => ({ ...p, [g.key]: v })) }}
-                          onBlur={() => void saveName(g)}
+                          onChange={e => setEdit(g.key, 'name', e.target.value)}
+                          onBlur={() => void saveMeta(g)}
                           onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
                           placeholder="— название —"
                           className="w-full h-7 px-2 rounded-md border border-transparent bg-transparent text-[12px] text-zinc-800 placeholder:text-zinc-400 hover:border-zinc-200 focus:border-zinc-300 focus:bg-white dark:text-zinc-200 dark:hover:border-zinc-700 dark:focus:border-zinc-600 dark:focus:bg-zinc-900 focus:outline-none transition-colors"
+                        />
+                      </td>
+                      <td className="border-l border-zinc-200 dark:border-zinc-800 px-2">
+                        <input
+                          type="date"
+                          value={valOf(g, 'createdDate')}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => setEdit(g.key, 'createdDate', e.target.value)}
+                          onBlur={() => void saveMeta(g)}
+                          className="w-full h-7 px-2 rounded-md border border-transparent bg-transparent text-[12px] text-zinc-700 hover:border-zinc-200 focus:border-zinc-300 focus:bg-white dark:text-zinc-300 dark:hover:border-zinc-700 dark:focus:border-zinc-600 dark:focus:bg-zinc-900 focus:outline-none transition-colors dark:[color-scheme:dark]"
+                        />
+                      </td>
+                      <td className="border-l border-zinc-200 dark:border-zinc-800 px-2">
+                        <input
+                          type="date"
+                          value={valOf(g, 'launchDate')}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => setEdit(g.key, 'launchDate', e.target.value)}
+                          onBlur={() => void saveMeta(g)}
+                          className="w-full h-7 px-2 rounded-md border border-transparent bg-transparent text-[12px] text-zinc-700 hover:border-zinc-200 focus:border-zinc-300 focus:bg-white dark:text-zinc-300 dark:hover:border-zinc-700 dark:focus:border-zinc-600 dark:focus:bg-zinc-900 focus:outline-none transition-colors dark:[color-scheme:dark]"
                         />
                       </td>
                       <Cell value={num(g.visitors)} className="text-zinc-800 dark:text-zinc-200 font-semibold" h={40} />
@@ -385,6 +419,8 @@ function PagesTable({ report }: { report: YandexReport }) {
                           </div>
                         </td>
                         <td className="border-l border-zinc-200 dark:border-zinc-800" />
+                        <td className="border-l border-zinc-200 dark:border-zinc-800" />
+                        <td className="border-l border-zinc-200 dark:border-zinc-800" />
                         <Cell value={num(p.visitors)} className="text-zinc-500 dark:text-zinc-400" h={34} />
                         <Cell value={hasGoal ? num(p.leadsMetrika) : '—'} className="text-blue-500/80 dark:text-blue-400/80" h={34} />
                         <Cell value={hasGoal ? pct(p.conversionMetrika) : '—'} className="text-emerald-600/80 dark:text-emerald-300/80" h={34} />
@@ -398,6 +434,8 @@ function PagesTable({ report }: { report: YandexReport }) {
                 <td className="sticky left-0 z-10 bg-zinc-50 dark:bg-zinc-900/80 border-r border-zinc-200 dark:border-zinc-800 px-4">
                   <div className="h-[40px] flex items-center pl-6 text-[12px] font-semibold text-zinc-500 dark:text-zinc-400">Итого</div>
                 </td>
+                <td className="border-l border-zinc-200 dark:border-zinc-800" />
+                <td className="border-l border-zinc-200 dark:border-zinc-800" />
                 <td className="border-l border-zinc-200 dark:border-zinc-800" />
                 <Cell value={num(report.totals.visitors)} className="text-zinc-900 dark:text-zinc-100 font-bold" h={40} />
                 <Cell value={hasGoal ? num(report.totals.leadsMetrika) : '—'} className="text-blue-600 dark:text-blue-400 font-bold" h={40} />

@@ -77,6 +77,8 @@ export interface PageGroup {
   key:               string    // 'rzd'
   label:             string    // '/rzd'
   name:              string | null  // ручное название клиента (если задано), напр. «РЖД»
+  createdDate:       string | null  // дата создания (ручная, YYYY-MM-DD)
+  launchDate:        string | null  // дата запуска (ручная, YYYY-MM-DD)
   visitors:          number    // сумма по подстраницам (приближение по уникальным)
   visits:            number
   leadsMetrika:      number
@@ -133,7 +135,7 @@ function groupPages(pages: PageRow[]): PageGroup[] {
     const { key, label } = groupKeyOf(p.url)
     let g = map.get(key)
     if (!g) {
-      g = { key, label, name: null, visitors: 0, visits: 0, leadsMetrika: 0, conversionMetrika: 0, pages: [] }
+      g = { key, label, name: null, createdDate: null, launchDate: null, visitors: 0, visits: 0, leadsMetrika: 0, conversionMetrika: 0, pages: [] }
       map.set(key, g)
     }
     g.visitors     += p.visitors
@@ -159,7 +161,7 @@ function groupPages(pages: PageRow[]): PageGroup[] {
     const bucket: PageGroup = {
       key: OTHER_KEY,
       label: `Прочее (редкие адреса · ${rare.length})`,
-      name: null,
+      name: null, createdDate: null, launchDate: null,
       visitors: 0, visits: 0, leadsMetrika: 0, conversionMetrika: 0, pages: [],
     }
     for (const g of rare) {
@@ -270,11 +272,16 @@ export const yandexService = {
     // amoCRM: число сделок за период (site-level). Привязка опциональна.
     const amocrm = await this.countAmocrmDeals(site, range.from, range.to)
 
-    // Ручные названия клиентов (по slug, независимы от периода) — подмешиваем в группы.
-    const names = await db.select().from(yandexClientNames).where(eq(yandexClientNames.siteId, siteId))
-    const nameBySlug = new Map(names.map(n => [n.slug, n.name]))
+    // Ручные данные клиентов (по slug, независимы от периода) — подмешиваем в группы.
+    const meta = await db.select().from(yandexClientNames).where(eq(yandexClientNames.siteId, siteId))
+    const metaBySlug = new Map(meta.map(m => [m.slug, m]))
     const groups = groupPages(pages)
-    for (const g of groups) g.name = nameBySlug.get(g.key) ?? null
+    for (const g of groups) {
+      const m = metaBySlug.get(g.key)
+      g.name        = m?.name ?? null
+      g.createdDate = m?.createdDate ?? null
+      g.launchDate  = m?.launchDate ?? null
+    }
 
     return {
       site: { id: site.id, name: site.name, counterId: site.counterId, goalId: site.goalId, hasGoal },
@@ -292,27 +299,31 @@ export const yandexService = {
   },
 
   /**
-   * Задаёт/очищает ручное название клиента для группы (slug) сайта.
-   * Пустое имя → удаляем запись (название сбрасывается). Иначе — upsert по (siteId, slug).
+   * Задаёт/очищает ручные данные клиента (название + даты) для группы (slug) сайта.
+   * Если все поля пусты → удаляем запись. Иначе — upsert по (siteId, slug).
+   * Даты — строка YYYY-MM-DD или пусто (→ null).
    */
-  async setClientName(siteId: number, slug: string, name: string) {
+  async setClientMeta(siteId: number, slug: string, input: { name?: string; createdDate?: string; launchDate?: string }) {
     const [site] = await db.select({ id: yandexSites.id }).from(yandexSites).where(eq(yandexSites.id, siteId))
     if (!site) throw new Error('Сайт не найден')
 
-    const trimmed = name.trim()
-    if (!trimmed) {
+    const name        = (input.name ?? '').trim() || null
+    const createdDate = (input.createdDate ?? '').trim() || null
+    const launchDate  = (input.launchDate ?? '').trim() || null
+
+    if (!name && !createdDate && !launchDate) {
       await db.delete(yandexClientNames)
         .where(and(eq(yandexClientNames.siteId, siteId), eq(yandexClientNames.slug, slug)))
-      return { siteId, slug, name: null }
+      return { siteId, slug, name: null, createdDate: null, launchDate: null }
     }
 
     await db.insert(yandexClientNames)
-      .values({ siteId, slug, name: trimmed })
+      .values({ siteId, slug, name, createdDate, launchDate })
       .onConflictDoUpdate({
         target: [yandexClientNames.siteId, yandexClientNames.slug],
-        set: { name: trimmed, updatedAt: sql`now()` },
+        set: { name, createdDate, launchDate, updatedAt: sql`now()` },
       })
-    return { siteId, slug, name: trimmed }
+    return { siteId, slug, name, createdDate, launchDate }
   },
 
   /**
