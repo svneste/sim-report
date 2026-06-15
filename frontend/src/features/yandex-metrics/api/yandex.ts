@@ -50,6 +50,7 @@ export interface PageRow {
 export interface PageGroup {
   key:               string
   label:             string
+  name:              string | null   // ручное название клиента (если задано)
   visits:            number
   visitors:          number
   leadsMetrika:      number
@@ -104,4 +105,14 @@ export async function fetchYandexReport(siteId: number, from?: string, to?: stri
   if (to) params.set('to', to)
   const res = await fetch(`${BASE}/api/yandex/report?${params.toString()}`, { headers: authHeaders() })
   return parse<YandexReport>(res)
+}
+
+/** Задать/очистить ручное название клиента (по slug) для сайта. Пустое name — сброс. */
+export async function setClientName(siteId: number, slug: string, name: string): Promise<{ siteId: number; slug: string; name: string | null }> {
+  const res = await fetch(`${BASE}/api/yandex/sites/${siteId}/client-name`, {
+    method: 'PUT',
+    headers: authHeaders(true),
+    body: JSON.stringify({ slug, name }),
+  })
+  return parse<{ siteId: number; slug: string; name: string | null }>(res)
 }

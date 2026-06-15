@@ -50,6 +50,13 @@
       "when": 1781000000000,
       "tag": "0006_yandex_sites",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781506835550,
+      "tag": "0007_yandex_client_names",
+      "breakpoints": true
     }
   ]
 }

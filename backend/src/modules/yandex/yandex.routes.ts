@@ -13,6 +13,12 @@ const siteSchema = z.object({
   amocrmPageFieldId: z.coerce.number().int().positive().nullish(),
 })
 
+// Тело для ручного названия клиента. name может быть пустым (сброс).
+const clientNameSchema = z.object({
+  slug: z.string().min(1, 'Пустой slug'),
+  name: z.string().max(120, 'Слишком длинное название'),
+})
+
 function toInput(body: z.infer<typeof siteSchema>): SiteInput {
   return {
     name:              body.name.trim(),
@@ -62,6 +68,26 @@ export const yandexRoutes: FastifyPluginAsync = async (app) => {
     const id = Number((req.params as { id: string }).id)
     if (!Number.isFinite(id)) { reply.code(400); return { error: 'invalid id' } }
     return yandexService.deleteSite(id)
+  })
+
+  /**
+   * PUT /api/yandex/sites/:id/client-name — задать/очистить ручное название клиента.
+   * Тело: { slug: string, name: string }. Пустое name сбрасывает название.
+   */
+  app.put('/api/yandex/sites/:id/client-name', async (req, reply) => {
+    const id = Number((req.params as { id: string }).id)
+    if (!Number.isFinite(id)) { reply.code(400); return { error: 'invalid id' } }
+    const parsed = clientNameSchema.safeParse(req.body)
+    if (!parsed.success) {
+      reply.code(400)
+      return { error: parsed.error.issues[0]?.message ?? 'Некорректные данные' }
+    }
+    try {
+      return await yandexService.setClientName(id, parsed.data.slug, parsed.data.name)
+    } catch (e) {
+      reply.code(404)
+      return { error: e instanceof Error ? e.message : String(e) }
+    }
   })
 
   /**

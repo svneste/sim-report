@@ -8,6 +8,7 @@ import {
   date,
   primaryKey,
   index,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core'
 
 /**
@@ -179,8 +180,24 @@ export const yandexSites = pgTable('yandex_sites', {
   createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
+/**
+ * Ручные («человеческие») названия клиентов для групп страниц в «Аналитике сайтов».
+ * Ключ группы — slug (первый сегмент пути, нормализованный), независим от периода.
+ * Уникальность по (site_id, slug); удаление сайта чистит названия каскадом.
+ */
+export const yandexClientNames = pgTable('yandex_client_names', {
+  id:        bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  siteId:    bigint('site_id', { mode: 'number' }).notNull().references(() => yandexSites.id, { onDelete: 'cascade' }),
+  slug:      text('slug').notNull(),                                       // 'rzd', 'akron', '__other__', '/'
+  name:      text('name').notNull(),                                       // «РЖД»
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, t => ({
+  siteSlugUniq: uniqueIndex('yandex_client_names_site_slug_uniq').on(t.siteId, t.slug),
+}))
+
 export type AmocrmUser     = typeof amocrmUsers.$inferSelect
 export type AmocrmDeal     = typeof amocrmDeals.$inferSelect
 export type SimRegistration = typeof simRegistrations.$inferSelect
 export type LeadStatusTransition = typeof leadStatusTransitions.$inferSelect
 export type YandexSite     = typeof yandexSites.$inferSelect
+export type YandexClientName = typeof yandexClientNames.$inferSelect

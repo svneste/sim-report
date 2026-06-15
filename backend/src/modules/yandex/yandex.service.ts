@@ -1,8 +1,8 @@
 import { db } from '../../db/client.js'
-import { yandexSites } from '../../db/schema.js'
+import { yandexSites, yandexClientNames } from '../../db/schema.js'
 import { config } from '../../core/config.js'
 import { logger } from '../../core/logger.js'
-import { eq, asc, sql } from 'drizzle-orm'
+import { eq, and, asc, sql } from 'drizzle-orm'
 
 // ===================== Яндекс Метрика API =====================
 
@@ -76,6 +76,7 @@ export interface PageRow {
 export interface PageGroup {
   key:               string    // 'rzd'
   label:             string    // '/rzd'
+  name:              string | null  // ручное название клиента (если задано), напр. «РЖД»
   visitors:          number    // сумма по подстраницам (приближение по уникальным)
   visits:            number
   leadsMetrika:      number
@@ -132,7 +133,7 @@ function groupPages(pages: PageRow[]): PageGroup[] {
     const { key, label } = groupKeyOf(p.url)
     let g = map.get(key)
     if (!g) {
-      g = { key, label, visitors: 0, visits: 0, leadsMetrika: 0, conversionMetrika: 0, pages: [] }
+      g = { key, label, name: null, visitors: 0, visits: 0, leadsMetrika: 0, conversionMetrika: 0, pages: [] }
       map.set(key, g)
     }
     g.visitors     += p.visitors
@@ -158,6 +159,7 @@ function groupPages(pages: PageRow[]): PageGroup[] {
     const bucket: PageGroup = {
       key: OTHER_KEY,
       label: `Прочее (редкие адреса · ${rare.length})`,
+      name: null,
       visitors: 0, visits: 0, leadsMetrika: 0, conversionMetrika: 0, pages: [],
     }
     for (const g of rare) {
@@ -268,6 +270,12 @@ export const yandexService = {
     // amoCRM: число сделок за период (site-level). Привязка опциональна.
     const amocrm = await this.countAmocrmDeals(site, range.from, range.to)
 
+    // Ручные названия клиентов (по slug, независимы от периода) — подмешиваем в группы.
+    const names = await db.select().from(yandexClientNames).where(eq(yandexClientNames.siteId, siteId))
+    const nameBySlug = new Map(names.map(n => [n.slug, n.name]))
+    const groups = groupPages(pages)
+    for (const g of groups) g.name = nameBySlug.get(g.key) ?? null
+
     return {
       site: { id: site.id, name: site.name, counterId: site.counterId, goalId: site.goalId, hasGoal },
       from: range.from,
@@ -278,9 +286,33 @@ export const yandexService = {
         leadsMetrika:      tLeads,
         conversionMetrika: tVisits > 0 ? (tLeads / tVisits) * 100 : 0,
       },
-      groups: groupPages(pages),
+      groups,
       amocrm,
     }
+  },
+
+  /**
+   * Задаёт/очищает ручное название клиента для группы (slug) сайта.
+   * Пустое имя → удаляем запись (название сбрасывается). Иначе — upsert по (siteId, slug).
+   */
+  async setClientName(siteId: number, slug: string, name: string) {
+    const [site] = await db.select({ id: yandexSites.id }).from(yandexSites).where(eq(yandexSites.id, siteId))
+    if (!site) throw new Error('Сайт не найден')
+
+    const trimmed = name.trim()
+    if (!trimmed) {
+      await db.delete(yandexClientNames)
+        .where(and(eq(yandexClientNames.siteId, siteId), eq(yandexClientNames.slug, slug)))
+      return { siteId, slug, name: null }
+    }
+
+    await db.insert(yandexClientNames)
+      .values({ siteId, slug, name: trimmed })
+      .onConflictDoUpdate({
+        target: [yandexClientNames.siteId, yandexClientNames.slug],
+        set: { name: trimmed, updatedAt: sql`now()` },
+      })
+    return { siteId, slug, name: trimmed }
   },
 
   /**
