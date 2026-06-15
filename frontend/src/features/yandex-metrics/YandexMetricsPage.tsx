@@ -184,7 +184,7 @@ export function YandexMetricsPage() {
                  color="text-violet-600 dark:text-violet-400" />
           </div>
 
-          {!report.site.hasGoal && (
+          {!report.site.hasGoal && !report.amocrmFunnel && (
             <div className="mb-4 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300 text-sm">
               Для этого сайта не указана цель Метрики — заявки и конверсия по страницам не считаются.
               Укажите ID цели в настройках сайта.
