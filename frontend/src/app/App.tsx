@@ -31,14 +31,13 @@ export function App() {
   const assocActive = tab === 'associations-day' || tab === 'associations-year'
   const finActive = tab === 'finances-megafon' || tab === 'finances-megafon-dynamics' || tab === 'finances-crm'
 
-  // Доступ к разделам по ФИО из Bitrix24 (нормализуем регистр/пробелы).
+  // Доступ к разделам по ID пользователя Bitrix24 (надёжнее ФИО).
   // Бэкенд /api/yandex/* пока не проверяет пользователя — это гейтинг на уровне UI.
-  const norm = (s?: string | null) => (s ?? '').trim().toLowerCase()
-  const fullName = `${norm(currentUser?.LAST_NAME)} ${norm(currentUser?.NAME)}`.trim()
-  const isNesterovich = fullName === 'нестерович сергей'
-  // «Аналитика сайтов»: Нестерович Сергей, Хитро Вероника, Кузьмин Владимир.
-  const ANALYTICS_ALLOWED = new Set(['нестерович сергей', 'хитро вероника', 'кузьмин владимир'])
-  const canViewAnalytics = ANALYTICS_ALLOWED.has(fullName)
+  const userId = currentUser?.ID
+  const isNesterovich = userId === '1' // Нестерович Сергей
+  // «Аналитика сайтов»: Нестерович Сергей (1), Хитро Вероника + Кузьмин Владимир (11, 173).
+  const ANALYTICS_ALLOWED = new Set(['1', '11', '173'])
+  const canViewAnalytics = userId != null && ANALYTICS_ALLOWED.has(userId)
 
   return (
     <Bx24Guard>
