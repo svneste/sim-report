@@ -109,6 +109,33 @@ export async function fetchMegafonDynamics(): Promise<MegafonDynamics> {
   return res.json()
 }
 
+export interface CohortCompany {
+  key:            string
+  name:           string | null
+  inn:            string | null
+  contractId:     string | null
+  contractLabel:  string
+  cohort:         number               // YYYYMM месяца подключения
+  cohortApprox:   boolean              // true = по первому появлению (нет даты активации)
+  totalReward:    number               // копейки, без НДС
+  rewardByPeriod: Record<number, number> // период → копейки, без НДС
+}
+
+export interface MegafonCohorts {
+  periods:   number[]                  // все периоды с данными, по возрастанию
+  companies: CohortCompany[]
+}
+
+export async function fetchMegafonCohorts(): Promise<MegafonCohorts> {
+  const headers: Record<string, string> = {}
+  const token = getB24Token()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${BASE}/api/megafon/cohorts`, { headers })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
 export async function fetchMegafonReport(period?: number): Promise<MegafonReport> {
   const headers: Record<string, string> = {}
   const token = getB24Token()

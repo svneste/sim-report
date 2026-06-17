@@ -561,4 +561,93 @@ export const megafonService = {
 
     return { rows, contracts }
   },
+
+  /**
+   * Когортный отчёт: какие компании подключились в каком месяце и какое
+   * вознаграждение приносят помесячно.
+   *
+   * - Идентификатор компании: ИНН (если есть), иначе наименование клиента.
+   * - Месяц подключения (cohort) = месяц самой ранней активации SIM среди
+   *   её строк. Если дат активации нет вовсе — откат на первый период, в
+   *   котором компания встретилась в выгрузках (cohortApprox=true, метка
+   *   «не позже»: реально она могла подключиться раньше начала наблюдений).
+   * - Все суммы — в копейках, БЕЗ НДС (так данные и хранятся: отчёты ≤2025
+   *   парсер уже нормализовал делением на 1.2). См. [[megafon-report-parsing]].
+   * - Текущий договор компании — по самому позднему её периоду.
+   */
+  async getCompanyCohorts() {
+    const LABELS: Record<string, string> = {
+      '1': '1-01072015/АСМ',
+      '2': '1-01.05.2018/АС/B2B',
+    }
+    const labelFor = (cid: string | null) => (cid ? (LABELS[cid] ?? `Договор ${cid}`) : '—')
+
+    // Ключ компании: ИНН (непустой) или наименование. NULLIF убирает пустые строки.
+    const keyExpr = sql<string>`coalesce(nullif(${megafonReportRows.clientInn}, ''), ${megafonReportRows.clientName})`
+    const notNullKey = sql`coalesce(nullif(${megafonReportRows.clientInn}, ''), ${megafonReportRows.clientName}) is not null`
+
+    // 1. Матрица вознаграждений: компания × период (копейки, без НДС)
+    const matrix = await db
+      .select({
+        key: keyExpr,
+        period: megafonReportRows.period,
+        reward: sql<number>`coalesce(sum(${megafonReportRows.rewardMonth}), 0)::float8`,
+      })
+      .from(megafonReportRows)
+      .where(notNullKey)
+      .groupBy(keyExpr, megafonReportRows.period)
+
+    // 2. Метаданные компании + когорта подключения
+    const meta = await db
+      .select({
+        key: keyExpr,
+        inn: sql<string | null>`max(${megafonReportRows.clientInn})`,
+        name: sql<string | null>`max(${megafonReportRows.clientName})`,
+        firstPeriod: sql<number>`min(${megafonReportRows.period})::int`,
+        // месяц самой ранней активации (YYYYMM) или null
+        cohortAct: sql<number | null>`case when min(${megafonReportRows.activationDate}) is not null
+          then extract(year from min(${megafonReportRows.activationDate}))::int * 100
+             + extract(month from min(${megafonReportRows.activationDate}))::int
+          else null end`,
+        // текущий договор — по самому позднему периоду
+        contractId: sql<string | null>`(array_agg(${megafonReportRows.contractId} order by ${megafonReportRows.period} desc))[1]`,
+      })
+      .from(megafonReportRows)
+      .where(notNullKey)
+      .groupBy(keyExpr)
+
+    // 3. Сборка: для каждой компании — карта период→вознаграждение + когорта
+    const rewardByKey = new Map<string, Record<number, number>>()
+    const periodsSet = new Set<number>()
+    for (const m of matrix) {
+      periodsSet.add(m.period)
+      let rec = rewardByKey.get(m.key)
+      if (!rec) { rec = {}; rewardByKey.set(m.key, rec) }
+      rec[m.period] = Math.round(m.reward)
+    }
+
+    const periods = Array.from(periodsSet).sort((a, b) => a - b)
+
+    const companies = meta.map((m) => {
+      const rewardByPeriod = rewardByKey.get(m.key) ?? {}
+      const totalReward = Object.values(rewardByPeriod).reduce((s, v) => s + v, 0)
+      const cohort = m.cohortAct ?? m.firstPeriod
+      return {
+        key: m.key,
+        name: m.name,
+        inn: m.inn,
+        contractId: m.contractId,
+        contractLabel: labelFor(m.contractId),
+        cohort,
+        cohortApprox: m.cohortAct == null, // нет даты активации → когорта приблизительна
+        totalReward,
+        rewardByPeriod,
+      }
+    })
+
+    // Сортировка по умолчанию: сначала новые когорты, внутри — по вкладу
+    companies.sort((a, b) => b.cohort - a.cohort || b.totalReward - a.totalReward)
+
+    return { periods, companies }
+  },
 }

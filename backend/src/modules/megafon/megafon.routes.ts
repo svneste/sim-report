@@ -63,6 +63,14 @@ export const megafonRoutes: FastifyPluginAsync = async (app) => {
   })
 
   /**
+   * GET /api/megafon/cohorts
+   * Когортный отчёт: компании по месяцу подключения + помесячное вознаграждение.
+   */
+  app.get('/api/megafon/cohorts', async () => {
+    return megafonService.getCompanyCohorts()
+  })
+
+  /**
    * GET /api/megafon/report?period=202603
    * Агрегированный отчёт. Без period — по всем данным.
    */
