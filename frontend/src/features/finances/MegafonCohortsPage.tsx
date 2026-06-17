@@ -45,6 +45,10 @@ function innSuffix(c: CohortCompany): string | null {
   return c.inn
 }
 
+// Минимальный месяц подключения в отчёте: компании с регистрацией раньше
+// июня 2025 (и пустой столбец май'25) в этот отчёт не попадают.
+const COHORT_CUTOFF = 202506
+
 type SortDir = 'desc' | 'asc'
 
 interface Group {
@@ -74,7 +78,8 @@ export function MegafonCohortsPage() {
   }, [])
   useEffect(() => { void load() }, [load])
 
-  const periods = data?.periods ?? []
+  // Столбцы — только с июня 2025 (пустой май'25 не показываем)
+  const periods = (data?.periods ?? []).filter((p) => p >= COHORT_CUTOFF)
 
   // Фильтрация + группировка по месяцу подключения
   const { groups, grandTotal, totalCompanies, colTotals } = useMemo(() => {
@@ -83,6 +88,7 @@ export function MegafonCohortsPage() {
 
     const q = query.trim().toLowerCase()
     const filtered = data.companies.filter((c) => {
+      if (c.cohort < COHORT_CUTOFF) return false // подключённые до июня 2025 не показываем
       if (contract !== 'all' && c.contractId !== contract) return false
       if (!q) return true
       const hay = `${c.name ?? ''} ${c.inn ?? ''} ${displayName(c)}`.toLowerCase()
@@ -132,7 +138,7 @@ export function MegafonCohortsPage() {
         </button>
       </div>
       <p className="text-[12px] text-zinc-400 dark:text-zinc-500 mb-5 leading-snug">
-        Месяц подключения — по самой ранней активации SIM. Все суммы — вознаграждение <b>без НДС</b> (отчёты до 2026 пересчитаны −20% для сопоставимости).
+        Месяц подключения — по дате регистрации. Показаны компании с регистрацией <b>с июня 2025</b>. Все суммы — вознаграждение <b>без НДС</b> (отчёты до 2026 пересчитаны −20% для сопоставимости).
       </p>
 
       {error && (
@@ -225,23 +231,23 @@ export function MegafonCohortsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {groups.map((g) => (
-                    <CohortGroup key={g.cohort} group={g} periods={periods} />
-                  ))}
-                  {/* Итого по столбцам (видимые компании) */}
-                  <tr className="border-t-2 border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/80">
-                    <td className="sticky left-0 z-10 bg-zinc-50 dark:bg-zinc-900/80 border-r border-zinc-200 dark:border-zinc-800 px-3 h-11 font-semibold text-zinc-600 dark:text-zinc-300">
-                      Итого по месяцу
+                  {/* Общий итог по всем показанным компаниям — помесячно + всего */}
+                  <tr className="bg-zinc-100/80 dark:bg-zinc-800/60 border-b-2 border-zinc-300 dark:border-zinc-700">
+                    <td className="sticky left-0 z-10 bg-zinc-100/80 dark:bg-zinc-800/60 border-r border-zinc-200 dark:border-zinc-800 px-3 h-11 font-bold text-zinc-700 dark:text-zinc-200">
+                      Итого по всем компаниям
                     </td>
                     {periods.map((p) => (
-                      <td key={p} className="border-l border-zinc-200 dark:border-zinc-800 px-3 text-right tabular-nums font-medium text-zinc-700 dark:text-zinc-300">
+                      <td key={p} className="border-l border-zinc-200 dark:border-zinc-800 px-3 text-right tabular-nums font-semibold text-zinc-700 dark:text-zinc-200 whitespace-nowrap">
                         {colTotals[p] ? fmtRub(colTotals[p]) : <span className="text-zinc-300 dark:text-zinc-700">—</span>}
                       </td>
                     ))}
-                    <td className="border-l-2 border-zinc-200 dark:border-zinc-800 px-3 text-right tabular-nums font-bold text-emerald-600 dark:text-emerald-400">
+                    <td className="border-l-2 border-zinc-200 dark:border-zinc-800 px-3 text-right tabular-nums font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
                       {fmtRub(grandTotal)}
                     </td>
                   </tr>
+                  {groups.map((g) => (
+                    <CohortGroup key={g.cohort} group={g} periods={periods} />
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -265,6 +271,10 @@ export function MegafonCohortsPage() {
 
 function CohortGroup({ group, periods }: { group: Group; periods: number[] }) {
   const someApprox = group.companies.some((c) => c.cohortApprox)
+  // Помесячные итоги по компаниям этой когорты
+  const periodTotals = periods.map((p) =>
+    group.companies.reduce((s, c) => s + (c.rewardByPeriod[p] ?? 0), 0),
+  )
   return (
     <>
       {/* Заголовок месяца подключения */}
@@ -283,7 +293,11 @@ function CohortGroup({ group, periods }: { group: Group; periods: number[] }) {
             )}
           </div>
         </td>
-        <td colSpan={periods.length} className="border-y border-l border-zinc-200 dark:border-zinc-800 bg-indigo-50/60 dark:bg-indigo-950/30" />
+        {periods.map((p, i) => (
+          <td key={p} className="border-y border-l border-zinc-200 dark:border-zinc-800 bg-indigo-50/60 dark:bg-indigo-950/30 px-3 text-right tabular-nums font-medium text-indigo-700/90 dark:text-indigo-300/90 whitespace-nowrap">
+            {periodTotals[i] > 0 ? fmtRub(periodTotals[i]) : <span className="text-indigo-300/50 dark:text-indigo-700/50">—</span>}
+          </td>
+        ))}
         <td className="border-y border-l-2 border-zinc-200 dark:border-zinc-800 bg-indigo-50/60 dark:bg-indigo-950/30 px-3 text-right tabular-nums font-bold text-indigo-700 dark:text-indigo-300 whitespace-nowrap">
           {fmtRub(group.total)}
         </td>

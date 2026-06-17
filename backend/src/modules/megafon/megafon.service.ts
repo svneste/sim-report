@@ -567,10 +567,9 @@ export const megafonService = {
    * вознаграждение приносят помесячно.
    *
    * - Идентификатор компании: ИНН (если есть), иначе наименование клиента.
-   * - Месяц подключения (cohort) = месяц самой ранней активации SIM среди
-   *   её строк. Если дат активации нет вовсе — откат на первый период, в
-   *   котором компания встретилась в выгрузках (cohortApprox=true, метка
-   *   «не позже»: реально она могла подключиться раньше начала наблюдений).
+   * - Месяц подключения (cohort) = месяц самой ранней РЕГИСТРАЦИИ среди её
+   *   строк. Если дат регистрации нет — откат на активацию, затем на первый
+   *   период появления в выгрузках (cohortApprox=true, метка «не позже»).
    * - Все суммы — в копейках, БЕЗ НДС (так данные и хранятся: отчёты ≤2025
    *   парсер уже нормализовал делением на 1.2). См. [[megafon-report-parsing]].
    * - Текущий договор компании — по самому позднему её периоду.
@@ -604,7 +603,12 @@ export const megafonService = {
         inn: sql<string | null>`max(${megafonReportRows.clientInn})`,
         name: sql<string | null>`max(${megafonReportRows.clientName})`,
         firstPeriod: sql<number>`min(${megafonReportRows.period})::int`,
-        // месяц самой ранней активации (YYYYMM) или null
+        // месяц самой ранней РЕГИСТРАЦИИ (YYYYMM) или null — основной признак подключения
+        cohortReg: sql<number | null>`case when min(${megafonReportRows.registrationDate}) is not null
+          then extract(year from min(${megafonReportRows.registrationDate}))::int * 100
+             + extract(month from min(${megafonReportRows.registrationDate}))::int
+          else null end`,
+        // месяц самой ранней активации — запасной вариант, если регистрации нет
         cohortAct: sql<number | null>`case when min(${megafonReportRows.activationDate}) is not null
           then extract(year from min(${megafonReportRows.activationDate}))::int * 100
              + extract(month from min(${megafonReportRows.activationDate}))::int
@@ -631,7 +635,8 @@ export const megafonService = {
     const companies = meta.map((m) => {
       const rewardByPeriod = rewardByKey.get(m.key) ?? {}
       const totalReward = Object.values(rewardByPeriod).reduce((s, v) => s + v, 0)
-      const cohort = m.cohortAct ?? m.firstPeriod
+      // Месяц подключения: по дате регистрации; если её нет — по активации; иначе первый период
+      const cohort = m.cohortReg ?? m.cohortAct ?? m.firstPeriod
       return {
         key: m.key,
         name: m.name,
@@ -639,7 +644,7 @@ export const megafonService = {
         contractId: m.contractId,
         contractLabel: labelFor(m.contractId),
         cohort,
-        cohortApprox: m.cohortAct == null, // нет даты активации → когорта приблизительна
+        cohortApprox: m.cohortReg == null, // нет даты регистрации → когорта приблизительна
         totalReward,
         rewardByPeriod,
       }
