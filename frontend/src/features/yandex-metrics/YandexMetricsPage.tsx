@@ -435,48 +435,48 @@ function PagesTable({ report }: { report: YandexReport }) {
               <tr>
                 <SortTh
                   k="client" label="Клиент / страница" sort={sort} onSort={onSort}
-                  className="sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-900 border-b border-r border-zinc-200 dark:border-zinc-800 px-4 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10" />
-                <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-56">
+                  className="sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-900 border-b border-r border-zinc-200 dark:border-zinc-800 px-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-[260px]" />
+                <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-2 text-left text-xs font-medium leading-tight text-zinc-500 dark:text-zinc-400 h-10 w-40">
                   Название
                 </th>
-                <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-40">
+                <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-2 text-left text-xs font-medium leading-tight text-zinc-500 dark:text-zinc-400 h-10 w-28">
                   Дата создания
                 </th>
-                <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-40">
+                <th className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-2 text-left text-xs font-medium leading-tight text-zinc-500 dark:text-zinc-400 h-10 w-28">
                   Дата запуска
                 </th>
                 <SortTh
                   k="visitors" label="Посетители" sort={sort} onSort={onSort}
-                  className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-28" />
+                  className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-2 text-right text-xs font-medium leading-tight text-zinc-500 dark:text-zinc-400 h-10 w-24" />
                 <SortTh
                   k="leads" label="Заявки" sort={sort} onSort={onSort}
-                  className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-28" />
+                  className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-2 text-right text-xs font-medium leading-tight text-zinc-500 dark:text-zinc-400 h-10 w-20" />
                 <SortTh
                   k="conv" label="Конверсия" sort={sort} onSort={onSort}
-                  className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-28" />
+                  className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-2 text-right text-xs font-medium leading-tight text-zinc-500 dark:text-zinc-400 h-10 w-24" />
                 {report.amocrmFunnel && (
                   <>
                     <SortTh
                       k="advanced" label="Ответили" title="amoCRM: клиент откликнулся — сделка прошла дальше «Нового обращения»" sort={sort} onSort={onSort}
-                      className="border-b border-l-2 border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" />
+                      className="border-b border-l-2 border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-2 text-right text-xs font-medium leading-tight text-zinc-500 dark:text-zinc-400 h-10 w-20" />
                     <SortTh
                       k="convAR" label="Заявка→ответ" title="Конверсия: из заявок ответили (Ответили ÷ Заявки)" sort={sort} onSort={onSort}
-                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-400 dark:text-zinc-500 h-10 w-20" />
+                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-2 text-right text-xs font-medium leading-tight text-zinc-400 dark:text-zinc-500 h-10 w-20" />
                     <SortTh
                       k="connected" label="Подключено" title="amoCRM: подключено — дошли до «Договор отправлен» или уже «Успешно»" sort={sort} onSort={onSort}
-                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" />
+                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-2 text-right text-xs font-medium leading-tight text-zinc-500 dark:text-zinc-400 h-10 w-24" />
                     <SortTh
                       k="convRC" label="Ответ→подкл" title="Конверсия: из ответивших подключились (Подключено ÷ Ответили)" sort={sort} onSort={onSort}
-                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-400 dark:text-zinc-500 h-10 w-20" />
+                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-2 text-right text-xs font-medium leading-tight text-zinc-400 dark:text-zinc-500 h-10 w-20" />
                     <SortTh
                       k="connectedNew" label="Подкл. новые" title="amoCRM: из подключённых — новые номера (MNP? = нет)" sort={sort} onSort={onSort}
-                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" />
+                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-2 text-right text-xs font-medium leading-tight text-zinc-500 dark:text-zinc-400 h-10 w-20" />
                     <SortTh
                       k="connectedMnp" label="Подкл. MNP" title="amoCRM: из подключённых — переносы номера (MNP? = да)" sort={sort} onSort={onSort}
-                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" />
+                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-2 text-right text-xs font-medium leading-tight text-zinc-500 dark:text-zinc-400 h-10 w-20" />
                     <SortTh
                       k="lost" label="Отказ" title="amoCRM: текущий статус «Не реализовано»" sort={sort} onSort={onSort}
-                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 h-10 w-24" />
+                      className="border-b border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-2 text-right text-xs font-medium leading-tight text-zinc-500 dark:text-zinc-400 h-10 w-20" />
                   </>
                 )}
               </tr>
@@ -499,7 +499,7 @@ function PagesTable({ report }: { report: YandexReport }) {
                       className={`border-b border-zinc-200 dark:border-zinc-800 group ${expandable ? 'cursor-pointer' : ''} hover:bg-zinc-50 dark:hover:bg-zinc-800/40`}
                       onClick={() => expandable && toggle(rowId(g))}
                     >
-                      <td className="sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/40 border-r border-zinc-200 dark:border-zinc-800 px-4 transition-colors max-w-[520px]">
+                      <td className="sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/40 border-r border-zinc-200 dark:border-zinc-800 px-3 transition-colors max-w-[420px]">
                         <div className="h-[40px] flex items-center gap-2 text-[13px] font-medium text-zinc-900 dark:text-zinc-100">
                           <span className={`shrink-0 w-4 inline-flex justify-center text-zinc-400 ${expandable ? '' : 'opacity-0'}`}>
                             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6"
@@ -536,7 +536,7 @@ function PagesTable({ report }: { report: YandexReport }) {
                           )}
                         </div>
                       </td>
-                      <td className="border-l border-zinc-200 dark:border-zinc-800 px-2">
+                      <td className="border-l border-zinc-200 dark:border-zinc-800 px-1">
                         <input
                           value={valOf(g, 'name')}
                           onClick={e => e.stopPropagation()}
@@ -547,24 +547,24 @@ function PagesTable({ report }: { report: YandexReport }) {
                           className="w-full h-7 px-2 rounded-md border border-transparent bg-transparent text-[12px] text-zinc-800 placeholder:text-zinc-400 hover:border-zinc-200 focus:border-zinc-300 focus:bg-white dark:text-zinc-200 dark:hover:border-zinc-700 dark:focus:border-zinc-600 dark:focus:bg-zinc-900 focus:outline-none transition-colors"
                         />
                       </td>
-                      <td className="border-l border-zinc-200 dark:border-zinc-800 px-2">
+                      <td className="border-l border-zinc-200 dark:border-zinc-800 px-1">
                         <input
                           type="date"
                           value={valOf(g, 'createdDate')}
                           onClick={e => e.stopPropagation()}
                           onChange={e => setEdit(g, 'createdDate', e.target.value)}
                           onBlur={() => void saveMeta(g)}
-                          className="w-full h-7 px-2 rounded-md border border-transparent bg-transparent text-[12px] text-zinc-700 hover:border-zinc-200 focus:border-zinc-300 focus:bg-white dark:text-zinc-300 dark:hover:border-zinc-700 dark:focus:border-zinc-600 dark:focus:bg-zinc-900 focus:outline-none transition-colors dark:[color-scheme:dark]"
+                          className="w-full h-7 px-1 rounded-md border border-transparent bg-transparent text-[12px] text-zinc-700 hover:border-zinc-200 focus:border-zinc-300 focus:bg-white dark:text-zinc-300 dark:hover:border-zinc-700 dark:focus:border-zinc-600 dark:focus:bg-zinc-900 focus:outline-none transition-colors dark:[color-scheme:dark]"
                         />
                       </td>
-                      <td className="border-l border-zinc-200 dark:border-zinc-800 px-2">
+                      <td className="border-l border-zinc-200 dark:border-zinc-800 px-1">
                         <input
                           type="date"
                           value={valOf(g, 'launchDate')}
                           onClick={e => e.stopPropagation()}
                           onChange={e => setEdit(g, 'launchDate', e.target.value)}
                           onBlur={() => void saveMeta(g)}
-                          className="w-full h-7 px-2 rounded-md border border-transparent bg-transparent text-[12px] text-zinc-700 hover:border-zinc-200 focus:border-zinc-300 focus:bg-white dark:text-zinc-300 dark:hover:border-zinc-700 dark:focus:border-zinc-600 dark:focus:bg-zinc-900 focus:outline-none transition-colors dark:[color-scheme:dark]"
+                          className="w-full h-7 px-1 rounded-md border border-transparent bg-transparent text-[12px] text-zinc-700 hover:border-zinc-200 focus:border-zinc-300 focus:bg-white dark:text-zinc-300 dark:hover:border-zinc-700 dark:focus:border-zinc-600 dark:focus:bg-zinc-900 focus:outline-none transition-colors dark:[color-scheme:dark]"
                         />
                       </td>
                       <Cell value={num(g.visitors)} className="text-zinc-800 dark:text-zinc-200 font-semibold" h={40} />
@@ -583,7 +583,7 @@ function PagesTable({ report }: { report: YandexReport }) {
                     {/* Подстраницы */}
                     {isOpen && g.pages.map(p => (
                       <tr key={`${rowId(g)}:${p.url}`} className="border-b border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-900/40 group">
-                        <td className="sticky left-0 z-10 bg-zinc-50/40 dark:bg-zinc-900/40 border-r border-zinc-200 dark:border-zinc-800 px-4 max-w-[520px]">
+                        <td className="sticky left-0 z-10 bg-zinc-50/40 dark:bg-zinc-900/40 border-r border-zinc-200 dark:border-zinc-800 px-3 max-w-[420px]">
                           <div className="h-[34px] flex items-center pl-6 text-[12px] text-zinc-500 dark:text-zinc-400 truncate" title={p.url}>
                             {p.url}
                           </div>
@@ -602,7 +602,7 @@ function PagesTable({ report }: { report: YandexReport }) {
               })}
               {/* Итого */}
               <tr className="border-t-2 border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/80">
-                <td className="sticky left-0 z-10 bg-zinc-50 dark:bg-zinc-900/80 border-r border-zinc-200 dark:border-zinc-800 px-4">
+                <td className="sticky left-0 z-10 bg-zinc-50 dark:bg-zinc-900/80 border-r border-zinc-200 dark:border-zinc-800 px-3">
                   <div className="h-[40px] flex items-center pl-6 text-[12px] font-semibold text-zinc-500 dark:text-zinc-400">Итого</div>
                 </td>
                 <td className="border-l border-zinc-200 dark:border-zinc-800" />
@@ -669,7 +669,7 @@ function SortTh({ k, label, className, title, sort, onSort }: {
 /** Числовая ячейка таблицы (выравнивание по правому краю). */
 function Cell({ value, className, h }: { value: string; className?: string; h: number }) {
   return (
-    <td className="border-l border-zinc-200 dark:border-zinc-800 px-4 text-right">
+    <td className="border-l border-zinc-200 dark:border-zinc-800 px-2 text-right">
       <div className={`flex items-center justify-end text-[12px] ${className ?? ''}`} style={{ height: h }}>
         {value}
       </div>
@@ -681,7 +681,7 @@ function Cell({ value, className, h }: { value: string; className?: string; h: n
 function FCell({ value, h, first, className }: { value: string; h: number; first?: boolean; className?: string }) {
   const border = first ? 'border-l-2 border-zinc-300 dark:border-zinc-700' : 'border-l border-zinc-200 dark:border-zinc-800'
   return (
-    <td className={`${border} px-3 text-right`}>
+    <td className={`${border} px-2 text-right`}>
       <div className={`flex items-center justify-end text-[12px] ${className ?? ''}`} style={{ height: h }}>{value}</div>
     </td>
   )

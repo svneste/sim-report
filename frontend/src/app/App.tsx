@@ -45,7 +45,7 @@ export function App() {
     <div className="min-h-full">
       {/* Top bar в стиле sass-сервиса: sticky, тонкая нижняя граница, минимум контраста */}
       <header className="sticky top-0 z-50 h-14 bg-white/95 dark:bg-zinc-950/95 backdrop-blur border-b border-zinc-200 dark:border-zinc-800">
-        <div className="max-w-[1600px] mx-auto h-full px-6 flex items-center justify-between">
+        <div className="max-w-[1920px] mx-auto h-full px-5 flex items-center justify-between">
           <div className="flex items-center gap-4">
             {/* Брендовая метка вместо логотипа — оставляем место для иконки в будущем */}
             <div className="w-7 h-7 rounded-md bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0">
@@ -222,7 +222,7 @@ export function App() {
         </div>
       </header>
 
-      <main className="max-w-[1600px] mx-auto p-6">
+      <main className="max-w-[1920px] mx-auto px-5 py-6">
         {tab === 'sim'               && <SimCalendarPage />}
         {tab === 'associations-day'  && <AssociationsReportPage />}
         {tab === 'associations-year' && <AssociationsYearPage />}
