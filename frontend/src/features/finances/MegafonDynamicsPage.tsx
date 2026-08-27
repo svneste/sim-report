@@ -237,11 +237,42 @@ export function MegafonDynamicsPage() {
     return arr
   }, [contractKeys, colorTotal])
 
-  // Для таблицы — только месяцы с данными (без пустого «каркаса» графика).
+  // Хронология для таблицы — только месяцы с данными (без пустого «каркаса»
+  // графика). Окно у таблицы своё: в режиме «12 мес» показываем последние
+  // 24 месяца (два года — видно сезонность год к году), при выборе конкретного
+  // года — этот год, как на графике.
+  const tableChrono = useMemo(() => {
+    const withData = Array.from(byPeriod.keys())
+    if (withData.length === 0) return [] as ChartRow[]
+    let start: number
+    let end: number
+    if (view === 'rolling') {
+      end = Math.max(currentPeriod(), Math.max(...withData))
+      start = addMonths(end, -23)
+    } else {
+      start = view * 100 + 1
+      end = view * 100 + 12
+    }
+    const rows: ChartRow[] = []
+    for (let p = start; p <= end; p = addMonths(p, 1)) {
+      const e = byPeriod.get(p)
+      if (!e) continue
+      const row: ChartRow = {
+        period: p,
+        label: periodLabel(p),
+        fullLabel: periodFullLabel(p),
+        total: e.total,
+      }
+      for (const k of contractKeys) row[`contract_${k.key}`] = e.contracts[k.key] ?? 0
+      rows.push(row)
+    }
+    return rows
+  }, [byPeriod, contractKeys, view])
+
   // Для каждой ячейки (каждый договор + «Итого») считаем изменение к
   // предыдущему месяцу по хронологии, затем разворачиваем по tableSort.
   const tableRows = useMemo(() => {
-    const chrono = chartRows.filter(r => r.total != null)
+    const chrono = tableChrono
     const ids = ['total', ...contractKeys.map(k => `contract_${k.key}`)]
     const enriched = chrono.map((r, i) => {
       const prev = i > 0 ? chrono[i - 1] : null
@@ -256,12 +287,12 @@ export function MegafonDynamicsPage() {
       return { row: r, deltas }
     })
     return tableSort === 'desc' ? [...enriched].reverse() : enriched
-  }, [chartRows, contractKeys, tableSort])
+  }, [tableChrono, contractKeys, tableSort])
 
   // Изменение за весь период: первый → последний месяц (хронологически),
   // по каждому договору и «Итого» — для строки «Итого» в таблице.
   const periodDeltas = useMemo(() => {
-    const chrono = chartRows.filter(r => r.total != null)
+    const chrono = tableChrono
     if (chrono.length < 2) return null
     const first = chrono[0]
     const last = chrono[chrono.length - 1]
@@ -274,7 +305,7 @@ export function MegafonDynamicsPage() {
       out[id] = { abs, pct: f !== 0 ? (abs / f) * 100 : null }
     }
     return out
-  }, [chartRows, contractKeys])
+  }, [tableChrono, contractKeys])
 
   // Прогноз на 3 месяца вперёд. Строится по ВСЕЙ истории (не по видимому окну),
   // от последнего фактического месяца. Берём СРЕДНИЙ месячный прирост в рублях
@@ -294,7 +325,7 @@ export function MegafonDynamicsPage() {
     }
 
     const HORIZON = 3
-    const BASIS = 6 // окно для оценки среднего прироста (последние N месяцев)
+    const BASIS = 12 // окно для оценки среднего прироста (последние N месяцев)
 
     // Средний месячный прирост в рублях за последние BASIS приростов
     const avgStepOf = (id: string): number => {
