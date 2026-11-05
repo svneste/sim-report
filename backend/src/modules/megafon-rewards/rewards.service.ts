@@ -355,7 +355,7 @@ export interface AccrualRow {
   innSource:      InnSource | null
   managerId:      number
   manager:        string
-  connectedOn:    string | null   // YYYY-MM-DD — дата регистрации (МегаФон) или закрытия сделки
+  connectedOn:    string | null   // YYYY-MM-DD — более поздняя из: регистрация МегаФон / закрытие сделки
   connectedFrom:  'megafon' | 'deal'
   fullMonth:      number | null   // YYYYMM первого полного месяца
   charges:        number          // копейки, без НДС, за выбранный период
@@ -404,17 +404,18 @@ async function buildAccrual(period: number, force = false) {
 
   const rows: AccrualRow[] = deals.map(({ lead, inn, innSource, company }) => {
     const mf = inn ? meta.get(inn) : undefined
+    // Дата подключения = более поздняя из: регистрация в МегаФон / успешное закрытие
+    // сделки. При MNP регистрация раньше фактического переноса номеров, а сделку
+    // закрывают, когда номера уже работают — полный месяц считаем после обеих дат.
+    const closedOn = lead.closed_at
+      ? new Date((lead.closed_at + 3 * 3600) * 1000).toISOString().slice(0, 10)
+      : null
+    const regOn = mf?.firstReg ?? null
     let connectedOn: string | null = null
     let connectedFrom: AccrualRow['connectedFrom'] = 'deal'
-    let connPeriod: number | null = null
-    if (mf?.firstReg) {
-      connectedOn = mf.firstReg
-      connectedFrom = 'megafon'
-      connPeriod = +mf.firstReg.slice(0, 4) * 100 + +mf.firstReg.slice(5, 7)
-    } else if (lead.closed_at) {
-      connectedOn = new Date((lead.closed_at + 3 * 3600) * 1000).toISOString().slice(0, 10)
-      connPeriod = periodOfUnix(lead.closed_at)
-    }
+    if (regOn && (!closedOn || regOn >= closedOn)) { connectedOn = regOn; connectedFrom = 'megafon' }
+    else connectedOn = closedOn
+    const connPeriod = connectedOn ? +connectedOn.slice(0, 4) * 100 + +connectedOn.slice(5, 7) : null
     // Подключение 1-го числа — месяц уже полный
     const fullMonth = connPeriod == null ? null
       : connectedOn?.endsWith('-01') ? connPeriod : addMonths(connPeriod, 1)

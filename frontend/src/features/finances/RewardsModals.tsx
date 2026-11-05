@@ -252,7 +252,7 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
         </button>
         {period && (
           <span className="text-[11.5px] text-zinc-400 dark:text-zinc-500">
-            Клиенты, подключённые со 2 {MONTH_GEN[prevPeriod(period) % 100 - 1]} по 1 {MONTH_GEN[period % 100 - 1]}: это их первый полный месяц. Вознаграждение = начисления клиента за месяц (без НДС) × ставка сотрудника.
+            Клиенты, подключённые со 2 {MONTH_GEN[prevPeriod(period) % 100 - 1]} по 1 {MONTH_GEN[period % 100 - 1]} (берём более позднюю дату: регистрация в МегаФоне или успешное закрытие сделки): это их первый полный месяц. Вознаграждение = начисления клиента за месяц (без НДС) × ставка сотрудника.
           </span>
         )}
       </div>
