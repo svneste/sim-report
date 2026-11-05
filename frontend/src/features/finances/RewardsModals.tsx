@@ -137,6 +137,7 @@ const STATUS_INFO: Record<AccrualStatus, { label: string; cls: string }> = {
   accrued:   { label: 'уже начислено',       cls: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' },
   overdue:   { label: 'пропущено',           cls: 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400' },
   no_inn:    { label: 'нет ИНН',             cls: 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400' },
+  paid:      { label: 'выплачено ранее',     cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400' },
   not_found: { label: 'нет в отчётах МФ',    cls: 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400' },
   early:     { label: 'ещё рано',            cls: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400' },
   other:     { label: 'начислено ранее',     cls: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400' },
@@ -148,8 +149,11 @@ function statusHint(r: AccrualRow): string {
     case 'no_inn':    return 'Заполните ИНН в сделке или компании amoCRM'
     case 'not_found': return 'Клиента с таким ИНН нет в загруженных отчётах МегаФон'
     case 'early':     return r.fullMonth ? `Первый полный месяц — ${periodTitle(r.fullMonth).toLowerCase()}` : 'Начислений по клиенту ещё не было'
-    case 'other':     return r.currentPeriod ? `Начислено за ${periodTitle(r.currentPeriod).toLowerCase()}: ${fmtRub(r.currentAmount ?? 0)}${r.paid ? ', выплачено' : ''}` : ''
-    case 'accrued':   return `В сделке: ${fmtRub(r.currentAmount ?? 0)}${r.paid ? ', выплачено' : ''}. Отметьте, чтобы пересчитать`
+    case 'other':     return r.currentPeriod ? `Начислено за ${periodTitle(r.currentPeriod).toLowerCase()}: ${fmtRub(r.currentAmount ?? 0)}` : ''
+    case 'accrued':   return `В сделке: ${fmtRub(r.currentAmount ?? 0)}. Отметьте, чтобы пересчитать`
+    case 'paid':      return r.currentPeriod
+      ? `Выплачено за ${periodTitle(r.currentPeriod).toLowerCase()}: ${fmtRub(r.currentAmount ?? 0)}`
+      : 'Выплачено ранее (отчётный период в сделке не указан)'
     case 'ready':     return r.inReport ? '' : 'В отчёте за этот месяц клиента нет — начислений 0 ₽'
   }
 }
@@ -185,7 +189,10 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
   useEffect(() => { if (period) { setDone(null); void load(period) } }, [period, load])
 
   const rows = data?.rows ?? []
-  const main = rows.filter(r => r.status === 'ready' || r.status === 'accrued')
+  // Выплаченные за этот месяц тоже показываем в основном списке (без галочки), чтобы было видно всю картину
+  const paidHere = (r: AccrualRow) => r.status === 'paid' &&
+    (r.currentPeriod === period || (r.currentPeriod == null && r.fullMonth === period))
+  const main = rows.filter(r => r.status === 'ready' || r.status === 'accrued' || paidHere(r))
   // «Требуют внимания» — только свежие сделки: полный месяц в пределах 3 мес. до выбранного.
   // Старые (2017-й и т.п.) без ИНН — не шум в основном списке, а в «Остальных».
   const isProblem = (r: AccrualRow) => r.status === 'overdue' || r.status === 'no_inn' || r.status === 'not_found'
@@ -283,8 +290,8 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
               amoUrl={data.amoUrl}
               selected={selected}
               onToggle={toggle}
-              amount={r => rewardOf(r.charges, rate)}
-              sub={r => `начисления ${fmtRub(r.charges)}`}
+              amount={r => r.status === 'paid' ? (r.currentAmount ?? 0) : rewardOf(r.charges, rate)}
+              sub={r => r.status === 'paid' ? 'из сделки' : `начисления ${fmtRub(r.charges)}`}
             />
           )}
 
@@ -382,6 +389,12 @@ function ManagerTable({ rows, amoUrl, selected, onToggle, amount, sub }: {
                     </td>
                     <td className="py-2 align-top px-3">
                       <span className={`text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap ${st.cls}`}>{st.label}</span>
+                      <div
+                        title="Галочка «Вознаграждение выплачено» в сделке amoCRM"
+                        className={`mt-1 text-[10px] whitespace-nowrap ${r.paid ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-zinc-500'}`}
+                      >
+                        {r.paid ? '☑ выплачено' : '☐ не выплачено'}
+                      </div>
                     </td>
                     <td className="pr-5 py-2 align-top text-right tabular-nums text-zinc-800 dark:text-zinc-200 whitespace-nowrap">
                       {fmtRub(amount(r))}

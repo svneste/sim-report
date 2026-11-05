@@ -346,6 +346,7 @@ export type AccrualStatus =
   | 'overdue'    // полный месяц был раньше, но не начислено
   | 'no_inn'     // в сделке/компании нет ИНН
   | 'not_found'  // ИНН есть, но в отчётах МегаФон клиента нет
+  | 'paid'       // в сделке стоит «Вознаграждение выплачено» — не трогаем
 
 export interface AccrualRow {
   dealId:         number
@@ -417,8 +418,12 @@ async function buildAccrual(period: number, force = false) {
     const currentAmount = readMoneyKop(lead, setup.rewardField)
     const ch = inn ? charges.get(inn) ?? 0 : 0
 
+    const paid = readPaid(lead, setup.paidField)
     let status: AccrualStatus
-    if (currentPeriod === period) status = 'accrued'
+    // Галочка «Вознаграждение выплачено» в amoCRM — повторно не начисляем никогда,
+    // даже если «Отчетный период» в сделке не заполнен.
+    if (paid) status = 'paid'
+    else if (currentPeriod === period) status = 'accrued'
     else if (currentPeriod != null) status = 'other'
     else if (!inn) status = 'no_inn'
     else if (!mf) status = 'not_found'
@@ -443,7 +448,7 @@ async function buildAccrual(period: number, force = false) {
       selectable: status === 'ready' || status === 'accrued',
       currentPeriod,
       currentAmount,
-      paid: readPaid(lead, setup.paidField),
+      paid,
     }
   })
 

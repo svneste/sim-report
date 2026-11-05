@@ -149,7 +149,7 @@ export async function fetchMegafonReport(period?: number): Promise<MegafonReport
 
 // ===================== Вознаграждение сотрудникам (воронка «МегаФон Корп клиенты») =====================
 
-export type AccrualStatus = 'ready' | 'accrued' | 'other' | 'early' | 'overdue' | 'no_inn' | 'not_found'
+export type AccrualStatus = 'ready' | 'accrued' | 'other' | 'early' | 'overdue' | 'no_inn' | 'not_found' | 'paid'
 
 export interface AccrualRow {
   dealId:        number
