@@ -3,6 +3,7 @@ import { db } from '../../db/client.js'
 import { amocrmUsers, megafonReportRows } from '../../db/schema.js'
 import {
   amocrm,
+  type AmoCompany,
   type AmoCustomFieldDef,
   type AmoCustomFieldValue,
   type AmoLead,
@@ -75,8 +76,8 @@ interface Setup {
   periodField:  AmoCustomFieldDef
   rewardField:  AmoCustomFieldDef
   paidField:    AmoCustomFieldDef | null
-  leadInnField: AmoCustomFieldDef | null
-  compInnField: AmoCustomFieldDef | null
+  leadInnFields: AmoCustomFieldDef[]
+  compInnFields: AmoCustomFieldDef[]
 }
 
 let setupCache: { at: number; value: Setup } | null = null
@@ -104,17 +105,18 @@ async function getSetup(): Promise<Setup> {
       `Поля сделок: ${leadFields.map(f => f.name).join(', ')}`,
     )
   }
-  const leadInnField = find(/(^|\s)инн(\s|$)/)
+  const isInn = (f: AmoCustomFieldDef) => /инн/.test(norm(f.name))
+  const leadInnFields = leadFields.filter(isInn)
   const compFields = await amocrm.customFields('companies')
-  const compInnField = compFields.find(f => /(^|\s)инн(\s|$)/.test(norm(f.name))) ?? null
+  const compInnFields = compFields.filter(isInn)
 
   const value: Setup = {
     pipelineId: pipeline.id, pipelineName: pipeline.name,
-    periodField, rewardField, paidField, leadInnField, compInnField,
+    periodField, rewardField, paidField, leadInnFields, compInnFields,
   }
   logger.info('rewards setup', {
     pipeline: pipeline.id, period: periodField.id, periodType: periodField.type,
-    reward: rewardField.id, paid: paidField?.id, leadInn: leadInnField?.id, compInn: compInnField?.id,
+    reward: rewardField.id, paid: paidField?.id, leadInn: leadInnFields.map(f => f.name), compInn: compInnFields.map(f => f.name),
   })
   setupCache = { at: Date.now(), value }
   return value
@@ -183,17 +185,24 @@ const onlyDigits = (v: unknown) => (v == null ? '' : String(v).replace(/\D/g, ''
 
 // ───────────────────────── сделки + ИНН ─────────────────────────
 
-interface WonDeal {
-  lead:     AmoLead
-  inn:      string | null
-  company:  string | null
+interface RawDeal {
+  lead: AmoLead
+  comp: AmoCompany | null
 }
 
-async function loadWonDeals(setup: Setup): Promise<WonDeal[]> {
-  const leads: AmoLead[] = []
-  for await (const l of amocrm.leadsByStatus(setup.pipelineId, WON_STATUS)) leads.push(l)
+export type InnSource = 'field' | 'scan' | 'name'
 
-  // ИНН: поле сделки → поле компании
+interface WonDeal {
+  lead:      AmoLead
+  inn:       string | null
+  innSource: InnSource | null
+  company:   string | null
+}
+
+async function loadWonDeals(_setup: Setup): Promise<RawDeal[]> {
+  const leads: AmoLead[] = []
+  for await (const l of amocrm.leadsByStatus(_setup.pipelineId, WON_STATUS)) leads.push(l)
+
   const companyIds = new Set<number>()
   for (const l of leads) {
     const cid = l._embedded?.companies?.[0]?.id
@@ -201,13 +210,125 @@ async function loadWonDeals(setup: Setup): Promise<WonDeal[]> {
   }
   const companies = companyIds.size ? await amocrm.companiesByIds([...companyIds]) : []
   const compById = new Map(companies.map(c => [c.id, c]))
+  return leads.map(lead => ({ lead, comp: compById.get(lead._embedded?.companies?.[0]?.id ?? -1) ?? null }))
+}
 
-  return leads.map(lead => {
-    const comp = compById.get(lead._embedded?.companies?.[0]?.id ?? -1) ?? null
-    let inn = setup.leadInnField ? onlyDigits(fieldValue(lead.custom_fields_values, setup.leadInnField.id)) : ''
-    if (!inn && comp && setup.compInnField) inn = onlyDigits(fieldValue(comp.custom_fields_values, setup.compInnField.id))
-    return { lead, inn: inn.length === 10 || inn.length === 12 ? inn : null, company: comp?.name ?? null }
+// Нормализация названия для сопоставления с отчётом МегаФон:
+// без ОПФ, кавычек и пунктуации. «ООО "Завод «Алпас»"» → «завод алпас»
+const LEGAL_FORMS = /\b(ооо|оао|зао|пао|ао|ип|нко|ано|ано дпо|гбу|гку|гуп|муп|фгуп|фгбу|тсж|снт|кфх|общество с ограниченной ответственностью|акционерное общество|индивидуальный предприниматель)\b/g
+const normName = (s: string | null | undefined) =>
+  (s ?? '').toLowerCase().replace(/ё/g, 'е').replace(/[«»"'`“”„]/g, ' ').replace(/[^a-zа-я0-9 ]/g, ' ')
+    .replace(LEGAL_FORMS, ' ').replace(/\s+/g, ' ').trim()
+
+interface MegafonIndex { inns: Set<string>; byName: Map<string, string | null> }
+
+async function megafonIndex(): Promise<MegafonIndex> {
+  const rows = await db
+    .selectDistinct({ inn: megafonReportRows.clientInn, name: megafonReportRows.clientName })
+    .from(megafonReportRows)
+  const inns = new Set<string>()
+  const byName = new Map<string, string | null>()
+  for (const r of rows) {
+    const inn = onlyDigits(r.inn)
+    if (inn) inns.add(inn)
+    const n = normName(r.name)
+    if (n.length < 3 || !inn) continue
+    // одно название у разных ИНН — неоднозначно, по названию не матчим
+    if (byName.has(n) && byName.get(n) !== inn) byName.set(n, null); else byName.set(n, inn)
+  }
+  return { inns, byName }
+}
+
+const INN_RE = /(?<!\d)(\d{12}|\d{10})(?!\d)/g
+
+/**
+ * ИНН сделки, по убыванию надёжности:
+ * 1) поле с «ИНН» в названии (сделка, затем компания);
+ * 2) любое 10/12-значное число в полях сделки/компании, которое есть в отчётах МегаФон;
+ * 3) название компании/сделки совпало с наименованием клиента в отчётах МегаФон.
+ */
+function resolveInn(setup: Setup, d: RawDeal, idx: MegafonIndex): { inn: string | null; source: InnSource | null } {
+  const cfvs = [d.lead.custom_fields_values, d.comp?.custom_fields_values]
+  const named = [
+    ...setup.leadInnFields.map(f => onlyDigits(fieldValue(d.lead.custom_fields_values, f.id))),
+    ...setup.compInnFields.map(f => onlyDigits(fieldValue(d.comp?.custom_fields_values, f.id))),
+  ].filter(v => v.length === 10 || v.length === 12)
+  const namedKnown = named.find(v => idx.inns.has(v))
+  if (namedKnown) return { inn: namedKnown, source: 'field' }
+
+  const texts = [d.lead.name, d.comp?.name]
+  for (const cfv of cfvs) for (const f of cfv ?? []) for (const v of f.values ?? []) texts.push(String(v.value ?? ''))
+  for (const t of texts) {
+    for (const m of (t ?? '').matchAll(INN_RE)) if (idx.inns.has(m[1])) return { inn: m[1], source: 'scan' }
+  }
+
+  for (const n of [d.comp?.name, d.lead.name]) {
+    const inn = idx.byName.get(normName(n))
+    if (inn) return { inn, source: 'name' }
+  }
+  // ИНН из поля есть, но в отчётах его нет — вернём как есть (статус «нет в отчётах МФ»)
+  return named[0] ? { inn: named[0], source: 'field' } : { inn: null, source: null }
+}
+
+async function resolveDeals(setup: Setup, raws: RawDeal[]): Promise<WonDeal[]> {
+  const idx = await megafonIndex()
+  return raws.map(d => {
+    const { inn, source } = resolveInn(setup, d, idx)
+    return { lead: d.lead, inn, innSource: source, company: d.comp?.name ?? null }
   })
+}
+
+/**
+ * Кэш успешных сделок в памяти: выкачка из amoCRM (сделки + компании) —
+ * самое долгое место. Держим 15 мин, параллельные запросы ждут одну выкачку,
+ * после своих записей (начисление/выплата) правим кэш на месте.
+ */
+const DEALS_TTL = 15 * 60_000
+let dealsCache: { at: number; value: RawDeal[] } | null = null
+let dealsInflight: Promise<RawDeal[]> | null = null
+
+async function getRawDeals(setup: Setup, force = false): Promise<RawDeal[]> {
+  if (!force && dealsCache && Date.now() - dealsCache.at < DEALS_TTL) return dealsCache.value
+  if (dealsInflight) return dealsInflight
+  const started = Date.now()
+  dealsInflight = loadWonDeals(setup)
+    .then(value => {
+      dealsCache = { at: Date.now(), value }
+      logger.info('rewards deals loaded', { deals: value.length, ms: Date.now() - started })
+      return value
+    })
+    .finally(() => { dealsInflight = null })
+  return dealsInflight
+}
+
+async function getWonDeals(setup: Setup, force = false): Promise<WonDeal[]> {
+  return resolveDeals(setup, await getRawDeals(setup, force))
+}
+
+/** Применить наш PATCH к закэшированным сделкам (enum_id → подпись для чтения). */
+function applyToCache(setup: Setup, updates: Array<{ id: number; custom_fields_values: Array<{ field_id: number; values: unknown[] }> }>) {
+  if (!dealsCache) return
+  const byId = new Map(dealsCache.value.map(d => [d.lead.id, d.lead]))
+  for (const u of updates) {
+    const lead = byId.get(u.id)
+    if (!lead) continue
+    const cfv = [...(lead.custom_fields_values ?? [])]
+    for (const f of u.custom_fields_values) {
+      const values = (f.values as Array<{ value?: unknown; enum_id?: number }>).map(v =>
+        v.enum_id != null
+          ? { value: setup.periodField.enums?.find(e => e.id === v.enum_id)?.value ?? null, enum_id: v.enum_id }
+          : { value: v.value })
+      const i = cfv.findIndex(x => x.field_id === f.field_id)
+      const entry = { field_id: f.field_id, values } as AmoCustomFieldValue
+      if (i >= 0) cfv[i] = entry; else cfv.push(entry)
+    }
+    lead.custom_fields_values = cfv
+  }
+}
+
+export async function warmRewardsCache() {
+  const setup = await getSetup()
+  await getRawDeals(setup)
 }
 
 const userNames = async () => {
@@ -231,6 +352,7 @@ export interface AccrualRow {
   dealName:       string | null
   company:        string | null
   inn:            string | null
+  innSource:      InnSource | null
   managerId:      number
   manager:        string
   connectedOn:    string | null   // YYYY-MM-DD — дата регистрации (МегаФон) или закрытия сделки
@@ -245,9 +367,9 @@ export interface AccrualRow {
   paid:           boolean
 }
 
-async function buildAccrual(period: number) {
+async function buildAccrual(period: number, force = false) {
   const setup = await getSetup()
-  const deals = await loadWonDeals(setup)
+  const deals = await getWonDeals(setup, force)
   const inns = [...new Set(deals.map(d => d.inn).filter((x): x is string => !!x))]
 
   // Данные МегаФон по ИНН: самая ранняя регистрация + начисления за период
@@ -280,7 +402,7 @@ async function buildAccrual(period: number) {
   const names = await userNames()
   const fallbackYear = Math.floor(period / 100)
 
-  const rows: AccrualRow[] = deals.map(({ lead, inn, company }) => {
+  const rows: AccrualRow[] = deals.map(({ lead, inn, innSource, company }) => {
     const mf = inn ? meta.get(inn) : undefined
     let connectedOn: string | null = null
     let connectedFrom: AccrualRow['connectedFrom'] = 'deal'
@@ -315,6 +437,7 @@ async function buildAccrual(period: number) {
       dealName: lead.name,
       company,
       inn,
+      innSource,
       managerId: lead.responsible_user_id,
       manager: names.get(lead.responsible_user_id) ?? `#${lead.responsible_user_id}`,
       connectedOn,
@@ -336,8 +459,8 @@ async function buildAccrual(period: number) {
 // ───────────────────────── публичное API ─────────────────────────
 
 export const rewardsService = {
-  async preview(period: number) {
-    const { setup, rows } = await buildAccrual(period)
+  async preview(period: number, refresh = false) {
+    const { setup, rows } = await buildAccrual(period, refresh)
     const loaded = await db
       .select({ c: sql<number>`count(*)::int` })
       .from(megafonReportRows)
@@ -369,16 +492,17 @@ export const rewardsService = {
       ],
     }))
     await amocrm.patchLeads(updates)
+    applyToCache(setup, updates)
     const total = target.reduce((s, r) => s + r.charges, 0)
     logger.info('rewards accrued', { period, deals: target.length, total })
     return { updated: target.length, total }
   },
 
   /** Сделки с начисленным вознаграждением (для отметки «выплачено»). */
-  async payouts(period: number | null) {
+  async payouts(period: number | null, refresh = false) {
     const setup = await getSetup()
     if (!setup.paidField) throw new Error('Не нашёл в сделках поле «Вознаграждение выплачено»')
-    const deals = await loadWonDeals(setup)
+    const deals = await getWonDeals(setup, refresh)
     const names = await userNames()
     const year = period ? Math.floor(period / 100) : new Date().getFullYear()
 
@@ -408,10 +532,12 @@ export const rewardsService = {
   async setPaid(dealIds: number[], paid: boolean) {
     const setup = await getSetup()
     if (!setup.paidField) throw new Error('Не нашёл в сделках поле «Вознаграждение выплачено»')
-    await amocrm.patchLeads(dealIds.map(id => ({
+    const updates = dealIds.map(id => ({
       id,
-      custom_fields_values: [{ field_id: setup.paidField!.id, values: [{ value: paid }] }],
-    })))
+      custom_fields_values: [{ field_id: setup.paidField!.id, values: [{ value: paid }] as unknown[] }],
+    }))
+    await amocrm.patchLeads(updates)
+    applyToCache(setup, updates)
     logger.info('rewards paid flag', { deals: dealIds.length, paid })
     return { updated: dealIds.length }
   },

@@ -156,6 +156,7 @@ export interface AccrualRow {
   dealName:      string | null
   company:       string | null
   inn:           string | null
+  innSource:     'field' | 'scan' | 'name' | null
   managerId:     number
   manager:       string
   connectedOn:   string | null
@@ -208,8 +209,12 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T
 }
 
-export const fetchAccrualPreview = (period: number) =>
-  call<AccrualPreview>(`/api/megafon/rewards/preview?period=${period}`)
+export const fetchAccrualPreview = (period: number, refresh = false) =>
+  call<AccrualPreview>(`/api/megafon/rewards/preview?period=${period}${refresh ? '&refresh=1' : ''}`)
+
+/** Прогрев серверного кэша сделок amoCRM — чтобы окно начисления открывалось сразу. */
+export const warmRewards = () =>
+  call<{ ok: boolean }>('/api/megafon/rewards/warm', { method: 'POST', body: '{}' }).catch(() => null)
 
 export const accrueRewards = (period: number, dealIds: number[]) =>
   call<{ updated: number; total: number }>('/api/megafon/rewards/accrue', {

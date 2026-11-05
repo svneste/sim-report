@@ -3,6 +3,7 @@ import {
   fetchMegafonCohorts,
   type MegafonCohorts,
   type CohortCompany,
+  warmRewards,
 } from './api/megafon'
 import { AccrueRewardsModal, PayRewardsModal } from './RewardsModals'
 
@@ -79,6 +80,8 @@ export function MegafonCohortsPage() {
     }
   }, [])
   useEffect(() => { void load() }, [load])
+  // Заранее подтягиваем сделки amoCRM в кэш сервера — окно начисления откроется без ожидания
+  useEffect(() => { void warmRewards() }, [])
 
   // Столбцы — только с июня 2025 (пустой май'25 не показываем)
   const periods = (data?.periods ?? []).filter((p) => p >= COHORT_CUTOFF)

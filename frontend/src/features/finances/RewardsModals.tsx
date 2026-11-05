@@ -24,6 +24,14 @@ const MONTH_GEN = [
 ]
 const periodTitle = (p: number) => `${MONTH_FULL[p % 100 - 1]} ${Math.floor(p / 100)}`
 const prevPeriod = (p: number) => (p % 100 === 1 ? p - 89 : p - 1)
+const addMonths = (p: number, n: number) => {
+  const i = Math.floor(p / 100) * 12 + (p % 100 - 1) + n
+  return Math.floor(i / 12) * 100 + (i % 12) + 1
+}
+const MONTH_PREP = [
+  'январе', 'феврале', 'марте', 'апреле', 'мае', 'июне',
+  'июле', 'августе', 'сентябре', 'октябре', 'ноябре', 'декабре',
+]
 const fmtRub = (kop: number) =>
   (kop / 100).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽'
 const fmtDate = (iso: string | null) => {
@@ -151,10 +159,10 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [showRest, setShowRest] = useState(false)
 
-  const load = useCallback(async (p: number) => {
+  const load = useCallback(async (p: number, refresh = false) => {
     setLoading(true); setError(null)
     try {
-      const d = await fetchAccrualPreview(p)
+      const d = await fetchAccrualPreview(p, refresh)
       setData(d)
       // По умолчанию отмечены только «к начислению»
       setSelected(new Set(d.rows.filter(r => r.status === 'ready' && r.inReport).map(r => r.dealId)))
@@ -166,8 +174,12 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
 
   const rows = data?.rows ?? []
   const main = rows.filter(r => r.status === 'ready' || r.status === 'accrued')
-  const attention = rows.filter(r => r.status === 'overdue' || r.status === 'no_inn' || r.status === 'not_found')
-  const rest = rows.filter(r => r.status === 'early' || r.status === 'other')
+  // «Требуют внимания» — только свежие сделки: полный месяц в пределах 3 мес. до выбранного.
+  // Старые (2017-й и т.п.) без ИНН — не шум в основном списке, а в «Остальных».
+  const isProblem = (r: AccrualRow) => r.status === 'overdue' || r.status === 'no_inn' || r.status === 'not_found'
+  const isRecent = (r: AccrualRow) => !!period && r.fullMonth != null && r.fullMonth >= addMonths(period, -3) && r.fullMonth <= period
+  const attention = rows.filter(r => isProblem(r) && isRecent(r))
+  const rest = rows.filter(r => !main.includes(r) && !attention.includes(r))
   const chosen = rows.filter(r => selected.has(r.dealId))
   const chosenSum = chosen.reduce((s, r) => s + r.charges, 0)
 
@@ -207,7 +219,16 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
     >
       <div className="px-5 pt-4 pb-3 flex items-center gap-3 flex-wrap border-b border-zinc-100 dark:border-zinc-800/60">
         <span className="text-xs text-zinc-500 dark:text-zinc-400">Отчётный период</span>
-        <PeriodSelect value={period} options={options} onChange={setPeriod} />
+        <PeriodSelect value={period} options={options} onChange={setPeriod}
+          mark={p => ` · подключённые в ${MONTH_PREP[prevPeriod(p) % 100 - 1]}`} />
+        <button
+          onClick={() => { if (period) { setDone(null); void load(period, true) } }}
+          disabled={loading || !period}
+          title="Перечитать сделки из amoCRM (по умолчанию берутся из кэша, обновляется раз в 15 минут)"
+          className="ml-auto px-2.5 h-8 rounded-lg border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-40"
+        >
+          ↻ Обновить из amoCRM
+        </button>
         {period && (
           <span className="text-[11.5px] text-zinc-400 dark:text-zinc-500">
             Клиенты, подключённые со 2 {MONTH_GEN[prevPeriod(period) % 100 - 1]} по 1 {MONTH_GEN[period % 100 - 1]}: это их первый полный месяц. Сумма — начисления клиента за месяц без НДС.
@@ -254,7 +275,7 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
           {rest.length > 0 && (
             <div className="px-5 mt-3">
               <button onClick={() => setShowRest(v => !v)} className="text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200">
-                {showRest ? '▾' : '▸'} Остальные сделки ({rest.length}): начислены ранее или полный месяц ещё не наступил
+                {showRest ? '▾' : '▸'} Остальные сделки ({rest.length}): начислены ранее, полный месяц ещё не наступил или давно прошёл
               </button>
             </div>
           )}
@@ -326,6 +347,7 @@ function ManagerTable({ rows, amoUrl, selected, onToggle, amount }: {
                       </a>
                       <div className="text-[10.5px] text-zinc-400 dark:text-zinc-500 tabular-nums">
                         {r.inn ? `ИНН ${r.inn}` : 'ИНН не указан'}
+                        {r.innSource === 'name' && <span className="ml-1 text-amber-500" title="ИНН подобран по совпадению названия с отчётом МегаФон — проверьте">· по названию</span>}
                         {hint && <span className="ml-2 text-zinc-500 dark:text-zinc-400">· {hint}</span>}
                       </div>
                     </td>
