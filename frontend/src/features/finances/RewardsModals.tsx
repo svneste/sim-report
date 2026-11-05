@@ -39,6 +39,12 @@ const fmtDate = (iso: string | null) => {
   const [y, m, d] = iso.split('-').map(Number)
   return `${d} ${MONTH_GEN[m - 1]} ${y}`
 }
+/** Вознаграждение сотрудника, копейки, округлено до рубля (та же формула на сервере). */
+const rewardOf = (chargesKop: number, ratePct: number) => Math.round(chargesKop * ratePct / 100 / 100) * 100
+const RATE_KEY = 'megafon-rewards-rate'
+const readRate = () => {
+  try { const v = Number(localStorage.getItem(RATE_KEY)); return v > 0 && v <= 100 ? v : 15 } catch { return 15 }
+}
 const plural = (n: number, one: string, few: string, many: string) => {
   const m10 = n % 10, m100 = n % 100
   if (m100 >= 11 && m100 <= 14) return many
@@ -158,6 +164,12 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
   const [done, setDone] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [showRest, setShowRest] = useState(false)
+  const [rate, setRate] = useState<number>(readRate)
+  const rateOk = rate > 0 && rate <= 100
+  const changeRate = (v: number) => {
+    setRate(v)
+    try { if (v > 0 && v <= 100) localStorage.setItem(RATE_KEY, String(v)) } catch { /* noop */ }
+  }
 
   const load = useCallback(async (p: number, refresh = false) => {
     setLoading(true); setError(null)
@@ -181,7 +193,7 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
   const attention = rows.filter(r => isProblem(r) && isRecent(r))
   const rest = rows.filter(r => !main.includes(r) && !attention.includes(r))
   const chosen = rows.filter(r => selected.has(r.dealId))
-  const chosenSum = chosen.reduce((s, r) => s + r.charges, 0)
+  const chosenSum = chosen.reduce((s, r) => s + rewardOf(r.charges, rate), 0)
 
   const toggle = (ids: number[], on: boolean) => setSelected(prev => {
     const n = new Set(prev); for (const id of ids) on ? n.add(id) : n.delete(id); return n
@@ -191,7 +203,7 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
     if (!period || !chosen.length) return
     setSaving(true); setError(null)
     try {
-      const res = await accrueRewards(period, chosen.map(r => r.dealId))
+      const res = await accrueRewards(period, chosen.map(r => r.dealId), rate)
       setDone(`Записано в amoCRM: ${deals(res.updated)} на ${fmtRub(res.total)} за ${periodTitle(period).toLowerCase()}`)
       await load(period)
     } catch (e) {
@@ -209,9 +221,9 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
           <div className="text-xs text-zinc-500 dark:text-zinc-400">
             Выбрано: <b className="text-zinc-800 dark:text-zinc-100">{deals(chosen.length)}</b>
             <span className="mx-2 text-zinc-300 dark:text-zinc-700">·</span>
-            Сумма: <b className="text-emerald-600 dark:text-emerald-400">{fmtRub(chosenSum)}</b>
+            Вознаграждение ({rate}%): <b className="text-emerald-600 dark:text-emerald-400">{fmtRub(chosenSum)}</b>
           </div>
-          <button className={primaryBtn} disabled={!chosen.length || saving || loading} onClick={() => void submit()}>
+          <button className={primaryBtn} disabled={!chosen.length || saving || loading || !rateOk} onClick={() => void submit()}>
             {saving ? 'Записываю…' : 'Записать в amoCRM'}
           </button>
         </>
@@ -221,6 +233,15 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
         <span className="text-xs text-zinc-500 dark:text-zinc-400">Отчётный период</span>
         <PeriodSelect value={period} options={options} onChange={setPeriod}
           mark={p => ` · подключённые в ${MONTH_PREP[prevPeriod(p) % 100 - 1]}`} />
+        <span className="text-xs text-zinc-500 dark:text-zinc-400 ml-2">Ставка</span>
+        <div className="relative">
+          <input
+            type="number" min={1} max={100} step={0.5} value={rate}
+            onChange={e => changeRate(Number(e.target.value))}
+            className={`h-8 w-16 pl-2 pr-5 rounded-lg border bg-white text-xs tabular-nums dark:bg-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-indigo-400 ${rateOk ? 'border-zinc-200 dark:border-zinc-700' : 'border-red-400'}`}
+          />
+          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-zinc-400 pointer-events-none">%</span>
+        </div>
         <button
           onClick={() => { if (period) { setDone(null); void load(period, true) } }}
           disabled={loading || !period}
@@ -231,7 +252,7 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
         </button>
         {period && (
           <span className="text-[11.5px] text-zinc-400 dark:text-zinc-500">
-            Клиенты, подключённые со 2 {MONTH_GEN[prevPeriod(period) % 100 - 1]} по 1 {MONTH_GEN[period % 100 - 1]}: это их первый полный месяц. Сумма — начисления клиента за месяц без НДС.
+            Клиенты, подключённые со 2 {MONTH_GEN[prevPeriod(period) % 100 - 1]} по 1 {MONTH_GEN[period % 100 - 1]}: это их первый полный месяц. Вознаграждение = начисления клиента за месяц (без НДС) × ставка сотрудника.
           </span>
         )}
       </div>
@@ -262,13 +283,14 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
               amoUrl={data.amoUrl}
               selected={selected}
               onToggle={toggle}
-              amount={r => r.charges}
+              amount={r => rewardOf(r.charges, rate)}
+              sub={r => `начисления ${fmtRub(r.charges)}`}
             />
           )}
 
           {attention.length > 0 && (
             <Section title={`Требуют внимания · ${attention.length}`} tone="amber">
-              <ManagerTable rows={attention} amoUrl={data.amoUrl} amount={r => r.charges} />
+              <ManagerTable rows={attention} amoUrl={data.amoUrl} amount={r => rewardOf(r.charges, rate)} sub={r => `начисления ${fmtRub(r.charges)}`} />
             </Section>
           )}
 
@@ -297,12 +319,13 @@ function Section({ title, tone, children }: { title: string; tone: 'amber'; chil
   )
 }
 
-function ManagerTable({ rows, amoUrl, selected, onToggle, amount }: {
+function ManagerTable({ rows, amoUrl, selected, onToggle, amount, sub }: {
   rows: AccrualRow[]
   amoUrl: string
   selected?: Set<number>
   onToggle?: (ids: number[], on: boolean) => void
   amount: (r: AccrualRow) => number
+  sub?: (r: AccrualRow) => string
 }) {
   const groups = groupByManager(rows)
   return (
@@ -362,6 +385,7 @@ function ManagerTable({ rows, amoUrl, selected, onToggle, amount }: {
                     </td>
                     <td className="pr-5 py-2 align-top text-right tabular-nums text-zinc-800 dark:text-zinc-200 whitespace-nowrap">
                       {fmtRub(amount(r))}
+                      {sub && <div className="text-[10px] text-zinc-400 dark:text-zinc-500">{sub(r)}</div>}
                     </td>
                   </tr>
                 )

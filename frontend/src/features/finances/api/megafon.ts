@@ -216,9 +216,9 @@ export const fetchAccrualPreview = (period: number, refresh = false) =>
 export const warmRewards = () =>
   call<{ ok: boolean }>('/api/megafon/rewards/warm', { method: 'POST', body: '{}' }).catch(() => null)
 
-export const accrueRewards = (period: number, dealIds: number[]) =>
+export const accrueRewards = (period: number, dealIds: number[], ratePct: number) =>
   call<{ updated: number; total: number }>('/api/megafon/rewards/accrue', {
-    method: 'POST', body: JSON.stringify({ period, dealIds }),
+    method: 'POST', body: JSON.stringify({ period, dealIds, ratePct }),
   })
 
 export const fetchPayouts = (period?: number) =>

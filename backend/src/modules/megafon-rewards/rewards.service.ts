@@ -456,6 +456,9 @@ async function buildAccrual(period: number, force = false) {
   return { setup, rows }
 }
 
+/** Вознаграждение сотрудника в копейках, округлённое до рубля. Та же формула — на фронте. */
+const rewardOf = (chargesKop: number, ratePct: number) => Math.round(chargesKop * ratePct / 100 / 100) * 100
+
 // ───────────────────────── публичное API ─────────────────────────
 
 export const rewardsService = {
@@ -476,7 +479,11 @@ export const rewardsService = {
   },
 
   /** Записывает период и сумму в выбранные сделки. Сумму пересчитываем на сервере. */
-  async accrue(period: number, dealIds: number[]) {
+  /**
+   * Записывает период и вознаграждение в выбранные сделки.
+   * Вознаграждение = начисления клиента × ставка сотрудника (%). Считаем на сервере.
+   */
+  async accrue(period: number, dealIds: number[], ratePct: number) {
     const { setup, rows } = await buildAccrual(period)
     const wanted = new Set(dealIds)
     const target = rows.filter(r => wanted.has(r.dealId) && r.selectable)
@@ -487,14 +494,14 @@ export const rewardsService = {
       id: r.dealId,
       custom_fields_values: [
         { field_id: setup.periodField.id, ...periodVal },
-        { field_id: setup.rewardField.id, ...moneyPayload(setup.rewardField, r.charges) },
+        { field_id: setup.rewardField.id, ...moneyPayload(setup.rewardField, rewardOf(r.charges, ratePct)) },
         ...(setup.paidField ? [{ field_id: setup.paidField.id, values: [{ value: false }] }] : []),
       ],
     }))
     await amocrm.patchLeads(updates)
     applyToCache(setup, updates)
-    const total = target.reduce((s, r) => s + r.charges, 0)
-    logger.info('rewards accrued', { period, deals: target.length, total })
+    const total = target.reduce((s, r) => s + rewardOf(r.charges, ratePct), 0)
+    logger.info('rewards accrued', { period, deals: target.length, total, ratePct })
     return { updated: target.length, total }
   },
 

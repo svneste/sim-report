@@ -25,11 +25,11 @@ export const megafonRewardsRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true }
   })
 
-  /** POST /api/megafon/rewards/accrue {period, dealIds} — записать в amoCRM. */
+  /** POST /api/megafon/rewards/accrue {period, dealIds, ratePct} — записать в amoCRM. */
   app.post('/api/megafon/rewards/accrue', async (req, reply) => {
-    const body = z.object({ period: periodSchema, dealIds: z.array(z.number().int()).min(1) }).safeParse(req.body)
+    const body = z.object({ period: periodSchema, dealIds: z.array(z.number().int()).min(1), ratePct: z.number().gt(0).max(100) }).safeParse(req.body)
     if (!body.success) { reply.code(400); return { error: 'invalid body' } }
-    try { return await rewardsService.accrue(body.data.period, body.data.dealIds) } catch (e) { return fail(reply, e) }
+    try { return await rewardsService.accrue(body.data.period, body.data.dealIds, body.data.ratePct) } catch (e) { return fail(reply, e) }
   })
 
   /** GET /api/megafon/rewards/payouts?period=202609 — начисленные сделки. */
