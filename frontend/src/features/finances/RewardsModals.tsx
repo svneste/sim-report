@@ -147,7 +147,7 @@ function statusHint(r: AccrualRow): string {
     case 'overdue':   return r.fullMonth ? `Полный месяц был ${periodTitle(r.fullMonth).toLowerCase()} — выберите его вверху` : ''
     case 'no_inn':    return 'Заполните ИНН в сделке или компании amoCRM'
     case 'not_found': return 'Клиента с таким ИНН нет в загруженных отчётах МегаФон'
-    case 'early':     return r.fullMonth ? `Первый полный месяц — ${periodTitle(r.fullMonth).toLowerCase()}` : ''
+    case 'early':     return r.fullMonth ? `Первый полный месяц — ${periodTitle(r.fullMonth).toLowerCase()}` : 'Начислений по клиенту ещё не было'
     case 'other':     return r.currentPeriod ? `Начислено за ${periodTitle(r.currentPeriod).toLowerCase()}: ${fmtRub(r.currentAmount ?? 0)}${r.paid ? ', выплачено' : ''}` : ''
     case 'accrued':   return `В сделке: ${fmtRub(r.currentAmount ?? 0)}${r.paid ? ', выплачено' : ''}. Отметьте, чтобы пересчитать`
     case 'ready':     return r.inReport ? '' : 'В отчёте за этот месяц клиента нет — начислений 0 ₽'
@@ -232,7 +232,7 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
       <div className="px-5 pt-4 pb-3 flex items-center gap-3 flex-wrap border-b border-zinc-100 dark:border-zinc-800/60">
         <span className="text-xs text-zinc-500 dark:text-zinc-400">Отчётный период</span>
         <PeriodSelect value={period} options={options} onChange={setPeriod}
-          mark={p => ` · подключённые в ${MONTH_PREP[prevPeriod(p) % 100 - 1]}`} />
+          mark={p => ` · начисления с ${MONTH_GEN[prevPeriod(p) % 100 - 1]}`} />
         <span className="text-xs text-zinc-500 dark:text-zinc-400 ml-2">Ставка</span>
         <div className="relative">
           <input
@@ -252,7 +252,7 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
         </button>
         {period && (
           <span className="text-[11.5px] text-zinc-400 dark:text-zinc-500">
-            Клиенты, подключённые со 2 {MONTH_GEN[prevPeriod(period) % 100 - 1]} по 1 {MONTH_GEN[period % 100 - 1]} (берём более позднюю дату: регистрация в МегаФоне или успешное закрытие сделки): это их первый полный месяц. Вознаграждение = начисления клиента за месяц (без НДС) × ставка сотрудника.
+            Клиенты, у которых начисления пошли в {MONTH_PREP[prevPeriod(period) % 100 - 1]}: {periodTitle(period).toLowerCase()} — их первый полный месяц. Вознаграждение = начисления клиента за месяц (без НДС) × ставка сотрудника.
           </span>
         )}
       </div>
@@ -375,10 +375,10 @@ function ManagerTable({ rows, amoUrl, selected, onToggle, amount, sub }: {
                       </div>
                     </td>
                     <td className="py-2 align-top whitespace-nowrap text-zinc-500 dark:text-zinc-400">
-                      <div title={r.connectedFrom === 'megafon' ? 'Дата регистрации по отчёту МегаФон' : 'Дата закрытия сделки в amoCRM'}>
-                        {fmtDate(r.connectedOn)}
+                      <div title="Первый месяц, в котором у клиента появились начисления (отчёт МегаФон)">
+                        {r.firstChargeMonth ? `начисления с ${periodTitle(r.firstChargeMonth).toLowerCase()}` : 'начислений нет'}
                       </div>
-                      <div className="text-[10px] text-zinc-400 dark:text-zinc-600">{r.connectedFrom === 'megafon' ? 'регистрация МФ' : 'закрытие сделки'}</div>
+                      {r.connectedOn && <div className="text-[10px] text-zinc-400 dark:text-zinc-600">рег. {fmtDate(r.connectedOn)}</div>}
                     </td>
                     <td className="py-2 align-top px-3">
                       <span className={`text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap ${st.cls}`}>{st.label}</span>

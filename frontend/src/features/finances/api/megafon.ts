@@ -159,8 +159,8 @@ export interface AccrualRow {
   innSource:     'field' | 'scan' | 'name' | null
   managerId:     number
   manager:       string
-  connectedOn:   string | null
-  connectedFrom: 'megafon' | 'deal'
+  connectedOn:      string | null   // дата регистрации в МегаФон (справочно)
+  firstChargeMonth: number | null   // YYYYMM — первый месяц с начислениями
   fullMonth:     number | null
   charges:       number          // копейки, без НДС
   inReport:      boolean

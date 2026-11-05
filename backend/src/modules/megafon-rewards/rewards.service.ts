@@ -355,8 +355,8 @@ export interface AccrualRow {
   innSource:      InnSource | null
   managerId:      number
   manager:        string
-  connectedOn:    string | null   // YYYY-MM-DD — более поздняя из: регистрация МегаФон / закрытие сделки
-  connectedFrom:  'megafon' | 'deal'
+  connectedOn:      string | null   // YYYY-MM-DD — дата регистрации в МегаФон (справочно)
+  firstChargeMonth: number | null   // YYYYMM — первый месяц с начислениями
   fullMonth:      number | null   // YYYYMM первого полного месяца
   charges:        number          // копейки, без НДС, за выбранный период
   inReport:       boolean         // есть ли клиент в отчёте выбранного периода
@@ -373,7 +373,7 @@ async function buildAccrual(period: number, force = false) {
   const inns = [...new Set(deals.map(d => d.inn).filter((x): x is string => !!x))]
 
   // Данные МегаФон по ИНН: самая ранняя регистрация + начисления за период
-  const meta = new Map<string, { firstReg: string | null; firstPeriod: number }>()
+  const meta = new Map<string, { firstReg: string | null; firstPeriod: number; firstCharge: number | null }>()
   const charges = new Map<string, number>()
   if (inns.length) {
     const innList = sql.join(inns.map(i => sql`${i}`), sql`, `)
@@ -382,11 +382,13 @@ async function buildAccrual(period: number, force = false) {
         inn: megafonReportRows.clientInn,
         firstReg: sql<string | null>`min(${megafonReportRows.registrationDate})::text`,
         firstPeriod: sql<number>`min(${megafonReportRows.period})::int`,
+        // первый месяц, в котором у клиента появились начисления
+        firstCharge: sql<number | null>`(min(${megafonReportRows.period}) filter (where ${megafonReportRows.chargesMonth} > 0))::int`,
       })
       .from(megafonReportRows)
       .where(sql`${megafonReportRows.clientInn} in (${innList})`)
       .groupBy(megafonReportRows.clientInn)
-    for (const r of m) if (r.inn) meta.set(r.inn, { firstReg: r.firstReg, firstPeriod: r.firstPeriod })
+    for (const r of m) if (r.inn) meta.set(r.inn, { firstReg: r.firstReg, firstPeriod: r.firstPeriod, firstCharge: r.firstCharge })
 
     const c = await db
       .select({
@@ -404,21 +406,12 @@ async function buildAccrual(period: number, force = false) {
 
   const rows: AccrualRow[] = deals.map(({ lead, inn, innSource, company }) => {
     const mf = inn ? meta.get(inn) : undefined
-    // Дата подключения = более поздняя из: регистрация в МегаФон / успешное закрытие
-    // сделки. При MNP регистрация раньше фактического переноса номеров, а сделку
-    // закрывают, когда номера уже работают — полный месяц считаем после обеих дат.
-    const closedOn = lead.closed_at
-      ? new Date((lead.closed_at + 3 * 3600) * 1000).toISOString().slice(0, 10)
-      : null
-    const regOn = mf?.firstReg ?? null
-    let connectedOn: string | null = null
-    let connectedFrom: AccrualRow['connectedFrom'] = 'deal'
-    if (regOn && (!closedOn || regOn >= closedOn)) { connectedOn = regOn; connectedFrom = 'megafon' }
-    else connectedOn = closedOn
-    const connPeriod = connectedOn ? +connectedOn.slice(0, 4) * 100 + +connectedOn.slice(5, 7) : null
-    // Подключение 1-го числа — месяц уже полный
-    const fullMonth = connPeriod == null ? null
-      : connectedOn?.endsWith('-01') ? connPeriod : addMonths(connPeriod, 1)
+    // Правило: отталкиваемся от месяца, в котором у клиента ПОШЛИ НАЧИСЛЕНИЯ
+    // (по отчётам МегаФон). Он, как правило, неполный → платим за следующий.
+    // Подключили в апреле, пользоваться начали в мае → полный месяц — июнь.
+    const firstChargeMonth = mf?.firstCharge ?? null
+    const fullMonth = firstChargeMonth == null ? null : addMonths(firstChargeMonth, 1)
+    const connectedOn = mf?.firstReg ?? null
 
     const currentPeriod = readPeriod(lead, setup.periodField, fallbackYear)
     const currentAmount = readMoneyKop(lead, setup.rewardField)
@@ -442,7 +435,7 @@ async function buildAccrual(period: number, force = false) {
       managerId: lead.responsible_user_id,
       manager: names.get(lead.responsible_user_id) ?? `#${lead.responsible_user_id}`,
       connectedOn,
-      connectedFrom,
+      firstChargeMonth,
       fullMonth,
       charges: ch,
       inReport: inn ? charges.has(inn) : false,
