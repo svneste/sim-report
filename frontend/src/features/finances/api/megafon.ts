@@ -146,3 +146,80 @@ export async function fetchMegafonReport(period?: number): Promise<MegafonReport
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
+
+// ===================== Вознаграждение сотрудникам (воронка «МегаФон Корп клиенты») =====================
+
+export type AccrualStatus = 'ready' | 'accrued' | 'other' | 'early' | 'overdue' | 'no_inn' | 'not_found'
+
+export interface AccrualRow {
+  dealId:        number
+  dealName:      string | null
+  company:       string | null
+  inn:           string | null
+  managerId:     number
+  manager:       string
+  connectedOn:   string | null
+  connectedFrom: 'megafon' | 'deal'
+  fullMonth:     number | null
+  charges:       number          // копейки, без НДС
+  inReport:      boolean
+  status:        AccrualStatus
+  selectable:    boolean
+  currentPeriod: number | null
+  currentAmount: number | null
+  paid:          boolean
+}
+
+export interface AccrualPreview {
+  amoUrl:       string
+  period:       number
+  pipelineId:   number
+  pipelineName: string
+  reportLoaded: boolean
+  rows:         AccrualRow[]
+}
+
+export interface PayoutRow {
+  dealId:    number
+  dealName:  string | null
+  company:   string | null
+  inn:       string | null
+  managerId: number
+  manager:   string
+  period:    number
+  amount:    number   // копейки
+  paid:      boolean
+}
+
+export interface Payouts {
+  amoUrl:  string
+  periods: Array<{ period: number; hasUnpaid: boolean }>
+  rows:    PayoutRow[]
+}
+
+async function call<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {}
+  const token = getB24Token()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  if (init?.body) headers['Content-Type'] = 'application/json'
+  const res = await fetch(`${BASE}${path}`, { ...init, headers })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) throw new Error((data as { error?: string } | null)?.error ?? `HTTP ${res.status}`)
+  return data as T
+}
+
+export const fetchAccrualPreview = (period: number) =>
+  call<AccrualPreview>(`/api/megafon/rewards/preview?period=${period}`)
+
+export const accrueRewards = (period: number, dealIds: number[]) =>
+  call<{ updated: number; total: number }>('/api/megafon/rewards/accrue', {
+    method: 'POST', body: JSON.stringify({ period, dealIds }),
+  })
+
+export const fetchPayouts = (period?: number) =>
+  call<Payouts>(`/api/megafon/rewards/payouts${period ? `?period=${period}` : ''}`)
+
+export const setRewardsPaid = (dealIds: number[], paid: boolean) =>
+  call<{ updated: number }>('/api/megafon/rewards/paid', {
+    method: 'POST', body: JSON.stringify({ dealIds, paid }),
+  })

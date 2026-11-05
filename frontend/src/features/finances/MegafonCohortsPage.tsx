@@ -4,6 +4,7 @@ import {
   type MegafonCohorts,
   type CohortCompany,
 } from './api/megafon'
+import { AccrueRewardsModal, PayRewardsModal } from './RewardsModals'
 
 const MONTH_SHORT = [
   '', 'янв', 'фев', 'мар', 'апр', 'май', 'июн',
@@ -64,6 +65,7 @@ export function MegafonCohortsPage() {
   const [query, setQuery] = useState('')
   const [contract, setContract] = useState<'all' | '1' | '2'>('all')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [rewardsModal, setRewardsModal] = useState<'accrue' | 'pay' | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -125,6 +127,20 @@ export function MegafonCohortsPage() {
     <div>
       <div className="flex items-center justify-between mb-1 gap-3 flex-wrap">
         <h1 className="text-xl font-semibold">Финансы · МегаФон · Компании по месяцам</h1>
+        <div className="flex items-center gap-2">
+        <button
+          onClick={() => setRewardsModal('accrue')}
+          disabled={!data?.periods.length}
+          className="px-3 h-8 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-500 transition-colors disabled:opacity-50"
+        >
+          Начислить вознаграждение
+        </button>
+        <button
+          onClick={() => setRewardsModal('pay')}
+          className="px-3 h-8 rounded-lg border border-zinc-200 bg-white text-xs hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:text-zinc-200 transition-colors"
+        >
+          Вознаграждение выплачено
+        </button>
         <button
           onClick={() => void load()}
           disabled={loading}
@@ -136,7 +152,12 @@ export function MegafonCohortsPage() {
           </svg>
           Обновить
         </button>
+        </div>
       </div>
+      {rewardsModal === 'accrue' && data && (
+        <AccrueRewardsModal periods={data.periods} onClose={() => setRewardsModal(null)} />
+      )}
+      {rewardsModal === 'pay' && <PayRewardsModal onClose={() => setRewardsModal(null)} />}
       <p className="text-[12px] text-zinc-400 dark:text-zinc-500 mb-5 leading-snug">
         Месяц подключения — по дате регистрации. Показаны компании с регистрацией <b>с июня 2025</b>. Все суммы — вознаграждение <b>без НДС</b> (отчёты до 2026 пересчитаны −20% для сопоставимости).
       </p>

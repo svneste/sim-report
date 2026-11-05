@@ -12,6 +12,7 @@ import { bitrix24UsersRoutes } from './modules/bitrix24-users/bitrix24-users.rou
 import { paymentsRoutes } from './modules/payments/payments.routes.js'
 import { megafonRoutes } from './modules/megafon/megafon.routes.js'
 import { yandexRoutes } from './modules/yandex/yandex.routes.js'
+import { megafonRewardsRoutes } from './modules/megafon-rewards/rewards.routes.js'
 import multipart from '@fastify/multipart'
 import { bitrix24AuthHook } from './modules/bitrix24-auth/b24-auth.hook.js'
 import { sql } from 'drizzle-orm'
@@ -87,6 +88,7 @@ await app.register(bitrix24UsersRoutes)
 await app.register(paymentsRoutes)
 await app.register(megafonRoutes)
 await app.register(yandexRoutes)
+await app.register(megafonRewardsRoutes)
 
 app.listen({ port: config.PORT, host: config.HOST })
   .then(() => {
