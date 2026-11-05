@@ -445,7 +445,8 @@ async function buildAccrual(period: number, force = false) {
       charges: ch,
       inReport: inn ? charges.has(inn) : false,
       status,
-      selectable: status === 'ready' || status === 'accrued',
+      // overdue — ручной выбор: полный месяц прошёл, но не начислили; начисляем за выбранный период
+      selectable: status === 'ready' || status === 'accrued' || status === 'overdue',
       currentPeriod,
       currentAmount,
       paid,

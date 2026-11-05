@@ -148,7 +148,7 @@ const STATUS_INFO: Record<AccrualStatus, { label: string; cls: string }> = {
 
 function statusHint(r: AccrualRow): string {
   switch (r.status) {
-    case 'overdue':   return r.fullMonth ? `Полный месяц был ${periodTitle(r.fullMonth).toLowerCase()} — выберите его вверху` : ''
+    case 'overdue':   return r.fullMonth ? `Полный месяц был ${periodTitle(r.fullMonth).toLowerCase()} — не начислено. Можно отметить и начислить за выбранный месяц` : ''
     case 'no_inn':    return 'Заполните ИНН в сделке или компании amoCRM'
     case 'not_found': return 'Клиента с таким ИНН нет в загруженных отчётах МегаФон'
     case 'early':     return r.fullMonth ? `Первый полный месяц — ${periodTitle(r.fullMonth).toLowerCase()}` : 'Начислений по клиенту ещё не было'
@@ -300,7 +300,11 @@ export function AccrueRewardsModal({ periods, onClose }: { periods: number[]; on
 
           {attention.length > 0 && (
             <Section title={`Требуют внимания · ${attention.length}`} tone="amber">
-              <ManagerTable rows={attention} amoUrl={data.amoUrl} amount={r => rewardOf(r.charges, rate)} sub={r => `начисления ${fmtRub(r.charges)}`} />
+              <div className="px-5 pb-2 -mt-1 text-[11px] text-zinc-400 dark:text-zinc-500">
+                «Пропущено» можно отметить вручную — начислится за {data && periodTitle(data.period).toLowerCase()} по начислениям этого месяца.
+              </div>
+              <ManagerTable rows={attention} amoUrl={data.amoUrl} selected={selected} onToggle={toggle}
+                amount={r => rewardOf(r.charges, rate)} sub={r => `начисления ${fmtRub(r.charges)}`} />
             </Section>
           )}
 
