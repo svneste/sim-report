@@ -19,6 +19,14 @@ export const megafonRewardsRoutes: FastifyPluginAsync = async (app) => {
     try { return await rewardsService.preview(p.data, q.refresh === '1') } catch (e) { return fail(reply, e) }
   })
 
+  /** GET /api/megafon/rewards/check?months=6 — успешные сделки без начислений МегаФон. */
+  app.get('/api/megafon/rewards/check', async (req, reply) => {
+    const q = req.query as { months?: string; refresh?: string }
+    const months = q.months ? Number(q.months) : 6
+    if (!Number.isFinite(months) || months < 0 || months > 120) { reply.code(400); return { error: 'invalid months' } }
+    try { return await rewardsService.check(months, q.refresh === '1') } catch (e) { return fail(reply, e) }
+  })
+
   /** POST /api/megafon/rewards/warm — прогрев кэша сделок (дёргается при открытии вкладки). */
   app.post('/api/megafon/rewards/warm', async () => {
     warmRewardsCache().catch(e => logger.error('rewards warm failed', e))

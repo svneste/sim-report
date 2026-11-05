@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import {
   accrueRewards,
   fetchAccrualPreview,
+  fetchDealsCheck,
+  type CheckReason,
+  type DealsCheck,
   fetchPayouts,
   setRewardsPaid,
   type AccrualPreview,
@@ -563,6 +566,137 @@ export function PayRewardsModal({ onClose }: { onClose: () => void }) {
                 </ManagerGroup>
               )
             })}
+          </tbody>
+        </table>
+      )}
+    </Modal>
+  )
+}
+
+// ───────────────────────── «Проверка сделок» ─────────────────────────
+
+const REASON_INFO: Record<CheckReason, { label: string; hint: string; cls: string }> = {
+  no_inn:    { label: 'нет ИНН',             hint: 'ИНН не найден ни в сделке, ни в компании — заполните, иначе не сопоставить с МегаФоном', cls: 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400' },
+  not_found: { label: 'нет в отчётах МФ',    hint: 'Клиента с этим ИНН нет ни в одном отчёте МегаФон — проверьте, оформлен ли он на наш договор и верен ли ИНН', cls: 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400' },
+  zero:      { label: 'начислений 0',        hint: 'Клиент есть в отчётах МегаФон, но начислений нет — номера не используются или не перенесены', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400' },
+}
+
+export function DealsCheckModal({ onClose }: { onClose: () => void }) {
+  const [months, setMonths] = useState(6)
+  const [data, setData] = useState<DealsCheck | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [reason, setReason] = useState<CheckReason | 'all'>('all')
+
+  const load = useCallback(async (m: number, refresh = false) => {
+    setLoading(true); setError(null)
+    try { setData(await fetchDealsCheck(m, refresh)) }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); setData(null) }
+    finally { setLoading(false) }
+  }, [])
+  useEffect(() => { void load(months) }, [months, load])
+
+  const all = data?.rows ?? []
+  const counts = { no_inn: 0, not_found: 0, zero: 0 } as Record<CheckReason, number>
+  for (const r of all) if (!r.fresh) counts[r.reason]++
+  const rows = all.filter(r => reason === 'all' || r.reason === reason)
+  const actual = rows.filter(r => !r.fresh)
+  const fresh = rows.filter(r => r.fresh)
+
+  const renderRows = (list: typeof rows, muted: boolean) => groupByManager(list).map(g => (
+    <ManagerGroup key={g.id}
+      head={
+        <tr className="bg-zinc-50 dark:bg-zinc-800/50">
+          <td className="pl-5 py-2 font-semibold text-zinc-700 dark:text-zinc-200" colSpan={3}>
+            {g.manager} <span className="font-normal text-zinc-400">· {g.rows.length}</span>
+          </td>
+        </tr>
+      }
+    >
+      {g.rows.map(r => {
+        const info = REASON_INFO[r.reason]
+        return (
+          <tr key={r.dealId} className={`border-b border-zinc-100 dark:border-zinc-800/60 hover:bg-zinc-50/60 dark:hover:bg-zinc-800/30 ${muted ? 'opacity-60' : ''}`}>
+            <td className="pl-5 py-2 align-top">
+              <a href={`${data!.amoUrl}/leads/detail/${r.dealId}`} target="_blank" rel="noreferrer noopener"
+                className="text-[13px] text-zinc-900 dark:text-zinc-100 hover:text-indigo-600 dark:hover:text-indigo-400">
+                {dealTitle(r)} <span className="text-zinc-400">↗</span>
+              </a>
+              <div className="text-[10.5px] text-zinc-400 dark:text-zinc-500 tabular-nums">
+                {r.inn ? `ИНН ${r.inn}` : 'ИНН не указан'}
+                {r.innSource === 'name' && <span className="ml-1 text-amber-500">· по названию</span>}
+                <span className="ml-2 text-zinc-500 dark:text-zinc-400">· {muted ? 'Закрыта после последнего отчёта — дождитесь следующего' : info.hint}</span>
+                {r.reason === 'zero' && <span className="ml-1">(в отчётах: {r.reportPeriods} мес.)</span>}
+              </div>
+            </td>
+            <td className="py-2 px-3 align-top whitespace-nowrap text-zinc-500 dark:text-zinc-400">
+              закрыта {fmtDate(r.closedOn)}
+            </td>
+            <td className="pr-5 py-2 align-top text-right">
+              <span className={`text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap ${info.cls}`}>{info.label}</span>
+            </td>
+          </tr>
+        )
+      })}
+    </ManagerGroup>
+  ))
+
+  const chip = (key: CheckReason | 'all', label: string, n?: number) => (
+    <button key={key} onClick={() => setReason(key)}
+      className={`px-2.5 h-7 rounded-md text-xs transition-colors ${reason === key
+        ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium'
+        : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'}`}>
+      {label}{n != null && <span className="ml-1 text-zinc-400">{n}</span>}
+    </button>
+  )
+
+  return (
+    <Modal
+      title="Проверка сделок"
+      subtitle={
+        <>Успешные сделки «МегаФон Корп клиенты», по которым в отчётах МегаФон нет начислений. Выплаченные и уже начисленные не показываются.
+          {data?.lastPeriod ? <> Последний загруженный отчёт — {periodTitle(data.lastPeriod).toLowerCase()}.</> : null}</>
+      }
+      onClose={onClose}
+    >
+      <div className="px-5 pt-4 pb-3 flex items-center gap-2 flex-wrap border-b border-zinc-100 dark:border-zinc-800/60">
+        <span className="text-xs text-zinc-500 dark:text-zinc-400">Закрыты за</span>
+        <select value={months} onChange={e => setMonths(Number(e.target.value))}
+          className="h-8 px-2 rounded-lg border border-zinc-200 bg-white text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+          <option value={3}>3 месяца</option>
+          <option value={6}>6 месяцев</option>
+          <option value={12}>12 месяцев</option>
+          <option value={0}>всё время</option>
+        </select>
+        <div className="flex items-center gap-1 ml-2">
+          {chip('all', 'Все', counts.no_inn + counts.not_found + counts.zero)}
+          {chip('zero', 'Начислений 0', counts.zero)}
+          {chip('not_found', 'Нет в отчётах', counts.not_found)}
+          {chip('no_inn', 'Нет ИНН', counts.no_inn)}
+        </div>
+        <button onClick={() => void load(months, true)} disabled={loading}
+          className="ml-auto px-2.5 h-8 rounded-lg border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-40">
+          ↻ Обновить из amoCRM
+        </button>
+      </div>
+
+      {error && <ErrorBox text={error} />}
+      {loading && <Spinner />}
+
+      {!loading && data && actual.length === 0 && fresh.length === 0 && (
+        <div className="px-5 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400">Проблемных сделок нет 👍</div>
+      )}
+
+      {!loading && data && (actual.length > 0 || fresh.length > 0) && (
+        <table className="w-full text-xs border-collapse mb-4">
+          <tbody>
+            {renderRows(actual, false)}
+            {fresh.length > 0 && (
+              <tr><td colSpan={3} className="px-5 pt-5 pb-2 text-xs font-semibold text-zinc-400">
+                Закрыты недавно — отчёт МегаФон за их месяц ещё не загружен · {fresh.length}
+              </td></tr>
+            )}
+            {renderRows(fresh, true)}
           </tbody>
         </table>
       )}

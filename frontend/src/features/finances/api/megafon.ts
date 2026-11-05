@@ -228,3 +228,28 @@ export const setRewardsPaid = (dealIds: number[], paid: boolean) =>
   call<{ updated: number }>('/api/megafon/rewards/paid', {
     method: 'POST', body: JSON.stringify({ dealIds, paid }),
   })
+
+export type CheckReason = 'no_inn' | 'not_found' | 'zero'
+
+export interface CheckRow {
+  dealId:        number
+  dealName:      string | null
+  company:       string | null
+  inn:           string | null
+  innSource:     'field' | 'scan' | 'name' | null
+  managerId:     number
+  manager:       string
+  closedOn:      string          // YYYY-MM-DD
+  reason:        CheckReason
+  reportPeriods: number          // в скольких отчётах МФ встречается клиент
+  fresh:         boolean         // закрыта позже последнего отчёта — начислений ещё быть не может
+}
+
+export interface DealsCheck {
+  amoUrl:     string
+  lastPeriod: number | null
+  rows:       CheckRow[]
+}
+
+export const fetchDealsCheck = (months: number, refresh = false) =>
+  call<DealsCheck>(`/api/megafon/rewards/check?months=${months}${refresh ? '&refresh=1' : ''}`)

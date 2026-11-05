@@ -460,7 +460,70 @@ const rewardOf = (chargesKop: number, ratePct: number) => Math.round(chargesKop 
 
 // ───────────────────────── публичное API ─────────────────────────
 
+export type CheckReason = 'no_inn' | 'not_found' | 'zero'
+
 export const rewardsService = {
+  /**
+   * Проверка: успешные сделки, по которым в отчётах МегаФон нет начислений.
+   * Выплаченные и уже начисленные пропускаем. `fresh` = сделка закрыта позже,
+   * чем покрывает последний загруженный отчёт, — начислений ещё и не может быть.
+   */
+  async check(months: number, refresh = false) {
+    const setup = await getSetup()
+    const deals = await getWonDeals(setup, refresh)
+    const names = await userNames()
+
+    const lastRes = await db.select({ p: sql<number | null>`max(${megafonReportRows.period})::int` }).from(megafonReportRows)
+    const lastPeriod = lastRes[0]?.p ?? null
+
+    const inns = [...new Set(deals.map(d => d.inn).filter((x): x is string => !!x))]
+    const stats = new Map<string, { charges: number; periods: number; lastPeriod: number }>()
+    if (inns.length) {
+      const innList = sql.join(inns.map(i => sql`${i}`), sql`, `)
+      const r = await db
+        .select({
+          inn: megafonReportRows.clientInn,
+          charges: sql<number>`coalesce(sum(${megafonReportRows.chargesMonth}), 0)::float8`,
+          periods: sql<number>`count(distinct ${megafonReportRows.period})::int`,
+          lastPeriod: sql<number>`max(${megafonReportRows.period})::int`,
+        })
+        .from(megafonReportRows)
+        .where(sql`${megafonReportRows.clientInn} in (${innList})`)
+        .groupBy(megafonReportRows.clientInn)
+      for (const x of r) if (x.inn) stats.set(x.inn, { charges: Math.round(x.charges), periods: x.periods, lastPeriod: x.lastPeriod })
+    }
+
+    const fromSec = months > 0 ? Math.floor(Date.now() / 1000) - months * 31 * 86400 : 0
+    const year = new Date().getFullYear()
+    const rows = deals.flatMap(({ lead, inn, innSource, company }) => {
+      if (readPaid(lead, setup.paidField)) return []
+      if (readPeriod(lead, setup.periodField, year) != null) return []
+      if (!lead.closed_at || lead.closed_at < fromSec) return []
+      const st = inn ? stats.get(inn) : undefined
+      let reason: CheckReason
+      if (!inn) reason = 'no_inn'
+      else if (!st) reason = 'not_found'
+      else if (st.charges <= 0) reason = 'zero'
+      else return []
+      const closedPeriod = periodOfUnix(lead.closed_at)
+      return [{
+        dealId: lead.id,
+        dealName: lead.name,
+        company,
+        inn,
+        innSource,
+        managerId: lead.responsible_user_id,
+        manager: names.get(lead.responsible_user_id) ?? `#${lead.responsible_user_id}`,
+        closedOn: new Date((lead.closed_at + 3 * 3600) * 1000).toISOString().slice(0, 10),
+        reason,
+        reportPeriods: st?.periods ?? 0,
+        fresh: lastPeriod == null || closedPeriod >= lastPeriod,
+      }]
+    })
+    rows.sort((a, b) => Number(a.fresh) - Number(b.fresh) || b.closedOn.localeCompare(a.closedOn))
+    return { amoUrl: amoUrl(), lastPeriod, rows }
+  },
+
   async preview(period: number, refresh = false) {
     const { setup, rows } = await buildAccrual(period, refresh)
     const loaded = await db
