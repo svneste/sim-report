@@ -12,3 +12,44 @@ account.mskmegafon.ru {
         reverse_proxy frontend:80
     }
 }
+
+# ---------------------------------------------------------------------------
+# ВНИМАНИЕ: этот Caddy — единственный на сервере 217.149.29.91 (держит 80/443),
+# деплой копирует файл целиком. Блоки ниже обслуживают ДРУГИЕ проекты в той же
+# docker-сети melabs-sim_default. Удалишь их — упадут виджет Ellimed и melabs.ru
+# (так было 2026-09-07 и 2026-11-05).
+# ---------------------------------------------------------------------------
+
+# Бэкенд виджета Ellimed (/opt/ellimed-widget)
+widget.melabs.ru {
+    encode zstd gzip
+    reverse_proxy ellimed-widget-backend:3000
+}
+
+# Сайт melabs.ru (/opt/melabs-site); mos-demo отдаётся через него на /p/...
+www.melabs.ru {
+    redir https://melabs.ru{uri} permanent
+}
+
+melabs.ru {
+    encode zstd gzip
+    reverse_proxy melabs-site:3000
+}
+
+# Кабинет клиента (/k) и персональные КП (/p) старого приложения — после переезда melabs.ru на Битрикс.
+lk.melabs.ru {
+	encode zstd gzip
+	header X-Robots-Tag "noindex, nofollow"
+	@root path /
+	redir @root https://melabs.ru/ permanent
+	reverse_proxy melabs-site:3000
+}
+
+# ---------------------------------------------------------------------------
+# msk.projora.ru — НЕ УДАЛЯТЬ. Caddy получает и продлевает для этого имени
+# сертификат Let's Encrypt, который использует другой сервис на этом сервере
+# (копируется из тома caddy_data по cron). Без блока сертификат перестанет продлеваться.
+# ---------------------------------------------------------------------------
+msk.projora.ru {
+	redir https://melabs.ru/ 302
+}
